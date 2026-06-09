@@ -19,7 +19,8 @@ from user_behavior import (
     generate_behavior_data,
     calculate_behavior_scores,
     segment_users,
-    get_segment_summary
+    get_segment_summary,
+    get_recommended_thresholds
 )
 from theme_config import (
     THEMES,
@@ -1157,6 +1158,14 @@ def main():
     if 'theme' not in st.session_state:
         st.session_state.theme = DEFAULT_THEME
 
+    if 'segment_thresholds' not in st.session_state:
+        st.session_state.segment_thresholds = {
+            'score_normal_min': None,
+            'score_active_min': None,
+            'days_active_max': None,
+            'days_normal_max': None
+        }
+
     st.sidebar.header("🎨 主题设置")
     theme_options = get_theme_options()
     theme_keys = [opt[0] for opt in theme_options]
@@ -1192,6 +1201,11 @@ def main():
         step=100,
         help="选择生成的模拟数据样本数量"
     )
+
+    df_profile = generate_mock_data(n_samples)
+    df_behavior = generate_behavior_data(df_profile['user_id'].tolist())
+    df_behavior = calculate_behavior_scores(df_behavior)
+    df_preferences = generate_preference_data(df_profile['user_id'].tolist())
     
     st.sidebar.subheader("🗺️ 地域筛选")
     all_provinces = get_all_provinces()
@@ -1201,6 +1215,113 @@ def main():
         index=0,
         help="选择特定省份查看该省份的用户分布详情"
     )
+
+    st.sidebar.subheader("🎯 行为分群阈值设置")
+    with st.sidebar.expander("自定义分群阈值", expanded=True):
+        st.markdown("#### 行为得分阈值")
+        score_min_val = float(df_behavior['behavior_score'].min())
+        score_max_val = float(df_behavior['behavior_score'].max())
+
+        default_score_normal = st.session_state.segment_thresholds.get('score_normal_min')
+        if default_score_normal is None:
+            default_score_normal = round(float(df_behavior['behavior_score'].quantile(0.33)), 2)
+        default_score_active = st.session_state.segment_thresholds.get('score_active_min')
+        if default_score_active is None:
+            default_score_active = round(float(df_behavior['behavior_score'].quantile(0.66)), 2)
+
+        score_thresholds = st.slider(
+            "得分阈值（普通用户下限 / 活跃用户下限）",
+            min_value=score_min_val,
+            max_value=score_max_val,
+            value=(
+                float(default_score_normal),
+                float(default_score_active)
+            ),
+            step=0.5,
+            help="左侧滑块为普通用户最低得分，右侧滑块为活跃用户最低得分",
+            key="score_thresholds_slider"
+        )
+        score_normal_min, score_active_min = score_thresholds
+
+        if score_normal_min >= score_active_min:
+            st.warning("⚠️ 得分阈值配置异常：普通用户下限应小于活跃用户下限")
+
+        st.markdown(f"- 沉睡用户: 得分 < {score_normal_min:.1f}")
+        st.markdown(f"- 普通用户: {score_normal_min:.1f} ≤ 得分 < {score_active_min:.1f}")
+        st.markdown(f"- 活跃用户: 得分 ≥ {score_active_min:.1f}")
+
+        st.markdown("---")
+        st.markdown("#### 最后活跃天数阈值")
+        days_max_val = int(df_behavior['last_active_days'].max())
+
+        default_days_active = st.session_state.segment_thresholds.get('days_active_max')
+        if default_days_active is None:
+            default_days_active = 14
+        default_days_normal = st.session_state.segment_thresholds.get('days_normal_max')
+        if default_days_normal is None:
+            default_days_normal = 60
+
+        days_active_max = st.slider(
+            "活跃用户最大天数",
+            min_value=1,
+            max_value=min(60, days_max_val),
+            value=int(default_days_active),
+            step=1,
+            help="最后活跃天数在此值以内才可能被判定为活跃用户",
+            key="days_active_max_slider"
+        )
+        days_normal_max = st.slider(
+            "普通用户最大天数",
+            min_value=days_active_max + 1,
+            max_value=days_max_val,
+            value=int(max(default_days_normal, days_active_max + 1)),
+            step=1,
+            help="最后活跃天数在此值以内才可能被判定为普通用户，超过则为沉睡用户",
+            key="days_normal_max_slider"
+        )
+
+        st.markdown(f"- 活跃用户: ≤ {days_active_max} 天")
+        st.markdown(f"- 普通用户: ≤ {days_normal_max} 天")
+        st.markdown(f"- 沉睡用户: > {days_normal_max} 天")
+
+        st.markdown("---")
+        rec_col1, rec_col2 = st.columns(2)
+        with rec_col1:
+            if st.button("🎯 推荐阈值", use_container_width=True, help="根据数据分布自动设置合理的分群阈值"):
+                rec_thresholds = get_recommended_thresholds(df_behavior)
+                st.session_state.segment_thresholds = rec_thresholds
+                for _k in ["score_thresholds_slider", "days_active_max_slider", "days_normal_max_slider"]:
+                    if _k in st.session_state:
+                        del st.session_state[_k]
+                st.rerun()
+        with rec_col2:
+            if st.button("↺ 重置默认", use_container_width=True, help="重置为默认阈值（33%/66%分位数，14/60天）"):
+                st.session_state.segment_thresholds = {
+                    'score_normal_min': None,
+                    'score_active_min': None,
+                    'days_active_max': None,
+                    'days_normal_max': None
+                }
+                for _k in ["score_thresholds_slider", "days_active_max_slider", "days_normal_max_slider"]:
+                    if _k in st.session_state:
+                        del st.session_state[_k]
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("#### 📊 当前分群预览")
+        _preview_df = segment_users(
+            df_behavior,
+            score_normal_min=score_normal_min,
+            score_active_min=score_active_min,
+            days_active_max=days_active_max,
+            days_normal_max=days_normal_max
+        )
+        _seg_counts = _preview_df['user_segment'].value_counts()
+        _total = len(_preview_df)
+        for _seg in ['活跃用户', '普通用户', '沉睡用户']:
+            _cnt = int(_seg_counts.get(_seg, 0))
+            _pct = (_cnt / _total * 100) if _total > 0 else 0
+            st.markdown(f"- **{_seg}**: {_cnt:,} 人 ({_pct:.1f}%)")
 
     st.sidebar.subheader("🎯 行为群体筛选")
     segment_options = ["全部", "活跃用户", "普通用户", "沉睡用户"]
@@ -1291,11 +1412,20 @@ def main():
         help="根据当前筛选条件导出数据"
     )
 
-    df_profile = generate_mock_data(n_samples)
-    df_behavior = generate_behavior_data(df_profile['user_id'].tolist())
-    df_behavior = calculate_behavior_scores(df_behavior)
-    df_behavior = segment_users(df_behavior)
-    df_preferences = generate_preference_data(df_profile['user_id'].tolist())
+    st.session_state.segment_thresholds = {
+        'score_normal_min': score_normal_min,
+        'score_active_min': score_active_min,
+        'days_active_max': days_active_max,
+        'days_normal_max': days_normal_max
+    }
+
+    df_behavior = segment_users(
+        df_behavior,
+        score_normal_min=score_normal_min,
+        score_active_min=score_active_min,
+        days_active_max=days_active_max,
+        days_normal_max=days_normal_max
+    )
     
     df = df_profile.merge(df_behavior, on='user_id', how='left')
     df = df.merge(df_preferences, on='user_id', how='left')

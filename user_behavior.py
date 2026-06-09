@@ -78,17 +78,38 @@ def calculate_behavior_scores(df):
     return df
 
 
-@st.cache_data
-def segment_users(df):
+def get_recommended_thresholds(df):
+    score_normal_min = round(df['behavior_score'].quantile(0.33), 2)
+    score_active_min = round(df['behavior_score'].quantile(0.66), 2)
+    days_active_max = int(df['last_active_days'].quantile(0.25))
+    days_normal_max = int(df['last_active_days'].quantile(0.60))
+    days_active_max = max(1, min(days_active_max, 30))
+    days_normal_max = max(days_active_max + 1, min(days_normal_max, 90))
+    return {
+        'score_normal_min': score_normal_min,
+        'score_active_min': score_active_min,
+        'days_active_max': days_active_max,
+        'days_normal_max': days_normal_max
+    }
+
+
+def segment_users(df, score_normal_min=None, score_active_min=None,
+                  days_active_max=None, days_normal_max=None):
     df = df.copy()
 
-    score_33 = df['behavior_score'].quantile(0.33)
-    score_66 = df['behavior_score'].quantile(0.66)
+    if score_normal_min is None:
+        score_normal_min = df['behavior_score'].quantile(0.33)
+    if score_active_min is None:
+        score_active_min = df['behavior_score'].quantile(0.66)
+    if days_active_max is None:
+        days_active_max = 14
+    if days_normal_max is None:
+        days_normal_max = 60
 
     def classify_user(row):
-        if row['behavior_score'] >= score_66 and row['last_active_days'] <= 14:
+        if row['behavior_score'] >= score_active_min and row['last_active_days'] <= days_active_max:
             return '活跃用户'
-        elif row['behavior_score'] >= score_33 and row['last_active_days'] <= 60:
+        elif row['behavior_score'] >= score_normal_min and row['last_active_days'] <= days_normal_max:
             return '普通用户'
         else:
             return '沉睡用户'
