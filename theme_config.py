@@ -38,12 +38,17 @@ LIGHT_THEME = {
         'header_bg': '#2C3E50',
         'header_text': 'white',
         'sidebar_bg': '#2C3E50',
+        'sidebar_text': '#e8e8e8',
         'card_bg': 'white',
         'card_shadow': '0 2px 10px rgba(0,0,0,0.1)',
         'primary_text_color': '#2C3E50',
         'secondary_text_color': '#7f8c8d',
         'muted_text_color': '#95a5a6',
-        'footer_text_color': '#7f8c8d'
+        'footer_text_color': '#7f8c8d',
+        'border_color': '#e0e0e0',
+        'metric_value_color': '#2C3E50',
+        'metric_label_color': '#7f8c8d',
+        'metric_delta_color': '#27AE60'
     }
 }
 
@@ -87,12 +92,17 @@ DARK_THEME = {
         'header_bg': '#0f0f23',
         'header_text': '#e8e8e8',
         'sidebar_bg': '#0f0f23',
+        'sidebar_text': '#e8e8e8',
         'card_bg': '#16213e',
         'card_shadow': '0 2px 10px rgba(0,0,0,0.4)',
         'primary_text_color': '#e8e8e8',
         'secondary_text_color': '#a0a0b0',
         'muted_text_color': '#707080',
-        'footer_text_color': '#707080'
+        'footer_text_color': '#707080',
+        'border_color': '#2a2a4a',
+        'metric_value_color': '#e8e8e8',
+        'metric_label_color': '#a0a0b0',
+        'metric_delta_color': '#58d68d'
     }
 }
 
@@ -116,7 +126,18 @@ def generate_css(theme):
     c = theme['css']
     return f"""
 <style>
-.main {{
+.stApp,
+.stAppViewContainer,
+[data-testid="stAppViewContainer"],
+[data-testid="stApp"] {{
+    background-color: {c['main_bg']};
+}}
+[data-testid="stMain"],
+.main,
+.block-container {{
+    background-color: {c['main_bg']};
+}}
+[data-testid="stAppViewBlockContainer"] {{
     background-color: {c['main_bg']};
 }}
 .stApp > header {{
@@ -128,13 +149,24 @@ def generate_css(theme):
 .css-1d391kg {{
     background-color: {c['sidebar_bg']};
 }}
-[data-testid="stSidebar"] {{
+[data-testid="stSidebar"],
+[data-testid="stSidebarContent"],
+[data-testid="stSidebarUserContent"] {{
     background-color: {c['sidebar_bg']};
 }}
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stSlider label {{
-    color: #e8e8e8;
+[data-testid="stSidebar"] .stSlider label,
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stMultiSelect label,
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] li {{
+    color: {c['sidebar_text']};
+}}
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {{
+    color: {c['sidebar_text']};
 }}
 .metric-card {{
     background: {c['card_bg']};
@@ -155,25 +187,32 @@ def generate_css(theme):
     box-shadow: {c['card_shadow']};
     margin: 10px 0;
 }}
+[data-testid="stMetric"] {{
+    background-color: {c['card_bg']};
+    padding: 12px 16px;
+    border-radius: 8px;
+    box-shadow: {c['card_shadow']};
+}}
 [data-testid="stMetricValue"] {{
-    color: {c['primary_text_color']} !important;
+    color: {c['metric_value_color']} !important;
+    font-weight: 700 !important;
+}}
+[data-testid="stMetricLabel"] {{
+    color: {c['metric_label_color']} !important;
 }}
 [data-testid="stMetricLabel"] p {{
-    color: {c['secondary_text_color']} !important;
+    color: {c['metric_label_color']} !important;
 }}
 [data-testid="stMetricDelta"] {{
-    color: {c['secondary_text_color']} !important;
+    color: {c['metric_delta_color']} !important;
 }}
 h1, h2, h3, h4, h5, h6 {{
     color: {c['primary_text_color']} !important;
 }}
-p, span, div {{
-    color: {c['primary_text_color']};
-}}
-[data-testid="stMarkdownContainer"] p {{
-    color: {c['primary_text_color']};
-}}
-.stMarkdown {{
+[data-testid="stMarkdownContainer"] > p,
+[data-testid="stMarkdownContainer"] > div > p,
+.stMarkdown > p,
+.stMarkdown > div > p {{
     color: {c['primary_text_color']};
 }}
 [data-testid="stCaptionContainer"] p {{
@@ -182,30 +221,49 @@ p, span, div {{
 footer {{
     color: {c['footer_text_color']} !important;
 }}
-[data-testid="stDataFrame"] {{
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {{
     background-color: {c['card_bg']};
 }}
-[data-testid="stDataFrame"] table {{
-    background-color: {c['card_bg']};
-    color: {c['primary_text_color']};
-}}
-[data-testid="stDataFrame"] th {{
+[data-testid="stDataFrame"] table,
+[data-testid="stTable"] table {{
     background-color: {c['card_bg']};
     color: {c['primary_text_color']};
 }}
-[data-testid="stDataFrame"] td {{
+[data-testid="stDataFrame"] th,
+[data-testid="stTable"] th {{
     background-color: {c['card_bg']};
     color: {c['primary_text_color']};
 }}
-hr {{
-    border-color: {c['card_bg']};
+[data-testid="stDataFrame"] td,
+[data-testid="stTable"] td {{
+    background-color: {c['card_bg']};
+    color: {c['primary_text_color']};
 }}
-.stAlert {{
+hr,
+[data-testid="stMarkdownContainer"] hr {{
+    border-color: {c['border_color']} !important;
+    background-color: {c['border_color']} !important;
+}}
+.stAlert,
+[data-testid="stAlert"] {{
     background-color: {c['card_bg']} !important;
     color: {c['primary_text_color']} !important;
 }}
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p,
 .stSuccess, .stInfo, .stWarning, .stError {{
     color: {c['primary_text_color']} !important;
+}}
+[data-testid="stSelectbox"] label,
+[data-testid="stMultiSelect"] label,
+[data-testid="stSlider"] label,
+[data-testid="stCheckbox"] label,
+[data-testid="stRadio"] label {{
+    color: {c['secondary_text_color']};
+}}
+[data-testid="stTextInput"] label,
+[data-testid="stNumberInput"] label {{
+    color: {c['secondary_text_color']};
 }}
 </style>
 """
