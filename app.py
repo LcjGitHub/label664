@@ -12,6 +12,13 @@ from region_data import (
     get_all_provinces,
     get_cities_by_province
 )
+from user_behavior import (
+    generate_behavior_data,
+    calculate_behavior_scores,
+    segment_users,
+    get_segment_summary,
+    get_behavior_stats
+)
 
 warnings.filterwarnings('ignore')
 
@@ -339,6 +346,122 @@ def create_region_ns_chart(df):
     return fig
 
 
+def create_behavior_pie_chart(df):
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    font_prop = FontProperties(family='SimHei', size=12)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_text = FontProperties(family='SimHei', size=13, weight='bold')
+
+    segment_counts = df['user_segment'].value_counts()
+    segment_order = ['活跃用户', '普通用户', '沉睡用户']
+    segment_counts = segment_counts.reindex(segment_order)
+    segment_counts = segment_counts.fillna(0)
+
+    colors = ['#27AE60', '#3498DB', '#95A5A6']
+    explode = (0.05, 0.03, 0.03)
+
+    wedges, texts, autotexts = ax.pie(
+        segment_counts.values,
+        labels=segment_counts.index,
+        colors=colors,
+        autopct='%1.1f%%',
+        startangle=90,
+        explode=explode,
+        pctdistance=0.75,
+        wedgeprops=dict(edgecolor='white', linewidth=3)
+    )
+
+    for text in texts:
+        text.set_fontproperties(font_text)
+    for autotext in autotexts:
+        autotext.set_fontproperties(font_text)
+        autotext.set_color('white')
+
+    total = segment_counts.sum()
+    legend_labels = [
+        f'{seg}: {int(cnt)}人 ({cnt/total*100:.1f}%)'
+        for seg, cnt in zip(segment_counts.index, segment_counts.values)
+    ]
+    ax.legend(
+        wedges, legend_labels,
+        loc='center left',
+        bbox_to_anchor=(1, 0.5),
+        prop=font_prop,
+        frameon=True,
+        shadow=True
+    )
+
+    ax.set_title('用户行为分群分布', fontproperties=font_title, pad=20)
+
+    plt.tight_layout()
+    return fig
+
+
+def create_segment_comparison_chart(df):
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    font_prop = FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(family='SimHei', size=14, weight='bold')
+    font_label = FontProperties(family='SimHei', size=11, weight='bold')
+    font_text = FontProperties(family='SimHei', size=9, weight='bold')
+
+    segment_order = ['活跃用户', '普通用户', '沉睡用户']
+    colors = ['#27AE60', '#3498DB', '#95A5A6']
+
+    summary = df.groupby('user_segment', observed=True).agg({
+        'login_frequency': 'mean',
+        'online_hours': 'mean',
+        'purchase_count': 'mean',
+        'total_spent': 'mean'
+    }).reindex(segment_order)
+
+    metrics = [
+        ('login_frequency', '平均登录频率（次）', axes[0, 0]),
+        ('online_hours', '平均在线时长（小时）', axes[0, 1]),
+        ('purchase_count', '平均购买次数', axes[1, 0]),
+        ('total_spent', '平均消费金额（元）', axes[1, 1])
+    ]
+
+    for col, title, ax in metrics:
+        values = summary[col].values
+        bars = ax.bar(
+            range(len(segment_order)),
+            values,
+            color=colors,
+            edgecolor='white',
+            linewidth=2,
+            width=0.6
+        )
+
+        ax.set_xticks(range(len(segment_order)))
+        ax.set_xticklabels(segment_order, fontproperties=font_prop)
+        ax.set_title(title, fontproperties=font_title, pad=10)
+        ax.set_ylabel('数值', fontproperties=font_label)
+
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
+
+        for bar, val in zip(bars, values):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + max(values) * 0.02,
+                f'{val:.1f}',
+                ha='center',
+                fontproperties=font_text,
+                color='#2C3E50'
+            )
+
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.yaxis.grid(True, alpha=0.3, linestyle='--')
+        ax.set_axisbelow(True)
+
+    fig.suptitle('不同行为群体关键指标对比', fontproperties=font_title, fontsize=16, y=1.02)
+    plt.tight_layout()
+    return fig
+
+
 def main():
     st.title("👥 用户画像分析")
     st.markdown("---")
@@ -362,15 +485,59 @@ def main():
         index=0,
         help="选择特定省份查看该省份的用户分布详情"
     )
+
+    st.sidebar.subheader("🎯 行为群体筛选")
+    segment_options = ["全部", "活跃用户", "普通用户", "沉睡用户"]
+    selected_segment = st.sidebar.multiselect(
+        "选择行为群体",
+        options=segment_options[1:],
+        default=[],
+        help="选择一个或多个行为群体查看详细数据"
+    )
+
+    st.sidebar.subheader("📊 行为指标筛选")
+    min_login_freq = st.sidebar.slider(
+        "最低登录频率（次）",
+        min_value=0,
+        max_value=90,
+        value=0,
+        step=1
+    )
+    min_purchase = st.sidebar.slider(
+        "最低购买次数",
+        min_value=0,
+        max_value=50,
+        value=0,
+        step=1
+    )
+    min_online_hours = st.sidebar.slider(
+        "最低在线时长（小时）",
+        min_value=0.0,
+        max_value=500.0,
+        value=0.0,
+        step=1.0
+    )
     
     show_data = st.sidebar.checkbox("显示原始数据", value=False)
     
-    df = generate_mock_data(n_samples)
+    df_profile = generate_mock_data(n_samples)
+    df_behavior = generate_behavior_data(df_profile['user_id'].tolist())
+    df_behavior = calculate_behavior_scores(df_behavior)
+    df_behavior = segment_users(df_behavior)
+    
+    df = df_profile.merge(df_behavior, on='user_id', how='left')
+    
+    df_filtered = df.copy()
     
     if selected_province != "全部":
-        df_filtered = df[df['province'] == selected_province]
-    else:
-        df_filtered = df
+        df_filtered = df_filtered[df_filtered['province'] == selected_province]
+
+    if selected_segment:
+        df_filtered = df_filtered[df_filtered['user_segment'].isin(selected_segment)]
+
+    df_filtered = df_filtered[df_filtered['login_frequency'] >= min_login_freq]
+    df_filtered = df_filtered[df_filtered['purchase_count'] >= min_purchase]
+    df_filtered = df_filtered[df_filtered['online_hours'] >= min_online_hours]
     
     df_full = df
     
@@ -430,7 +597,97 @@ def main():
             value=f"{north_count:,}",
             delta=f"{north_count/len(df_filtered)*100:.1f}%"
         )
-    
+
+    if len(df_filtered) > 0:
+        bcol1, bcol2, bcol3, bcol4, bcol5, bcol6, bcol7 = st.columns(7)
+
+        with bcol1:
+            active_count = len(df_filtered[df_filtered['user_segment'] == '活跃用户'])
+            st.metric(
+                label="活跃用户",
+                value=f"{active_count:,}",
+                delta=f"{active_count/len(df_filtered)*100:.1f}%"
+            )
+
+        with bcol2:
+            normal_count = len(df_filtered[df_filtered['user_segment'] == '普通用户'])
+            st.metric(
+                label="普通用户",
+                value=f"{normal_count:,}",
+                delta=f"{normal_count/len(df_filtered)*100:.1f}%"
+            )
+
+        with bcol3:
+            dormant_count = len(df_filtered[df_filtered['user_segment'] == '沉睡用户'])
+            st.metric(
+                label="沉睡用户",
+                value=f"{dormant_count:,}",
+                delta=f"{dormant_count/len(df_filtered)*100:.1f}%"
+            )
+
+        with bcol4:
+            avg_login = df_filtered['login_frequency'].mean()
+            st.metric(
+                label="平均登录频率",
+                value=f"{avg_login:.1f}次",
+                delta=None
+            )
+
+        with bcol5:
+            avg_online = df_filtered['online_hours'].mean()
+            st.metric(
+                label="平均在线时长",
+                value=f"{avg_online:.1f}h",
+                delta=None
+            )
+
+        with bcol6:
+            avg_purchase = df_filtered['purchase_count'].mean()
+            st.metric(
+                label="平均购买次数",
+                value=f"{avg_purchase:.1f}次",
+                delta=None
+            )
+
+        with bcol7:
+            total_spent = df_filtered['total_spent'].sum()
+            st.metric(
+                label="总消费金额",
+                value=f"¥{total_spent:,.0f}",
+                delta=None
+            )
+
+    st.markdown("---")
+
+    st.subheader("🎯 用户行为分析")
+    st.markdown("#### 行为群体关键指标对比")
+
+    seg_col1, seg_col2, seg_col3 = st.columns(3)
+    segment_display = ['活跃用户', '普通用户', '沉睡用户']
+    segment_colors = ['#27AE60', '#3498DB', '#95A5A6']
+    segment_icons = ['🔥', '👤', '💤']
+
+    for i, (seg, color, icon) in enumerate(zip(segment_display, segment_colors, segment_icons)):
+        seg_data = df_full[df_full['user_segment'] == seg]
+        if len(seg_data) > 0:
+            with [seg_col1, seg_col2, seg_col3][i]:
+                st.markdown(
+                    f"""
+                    <div class="metric-card" style="border-top: 4px solid {color};">
+                        <h3 style="color: {color}; margin: 0 0 10px 0;">{icon} {seg}</h3>
+                        <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 10px 0;">{len(seg_data):,} 人</p>
+                        <p style="color: #7f8c8d; margin: 5px 0;">占比: {len(seg_data)/len(df_full)*100:.1f}%</p>
+                        <hr style="margin: 15px 0;">
+                        <p><strong>平均登录:</strong> {seg_data['login_frequency'].mean():.1f}次</p>
+                        <p><strong>平均在线:</strong> {seg_data['online_hours'].mean():.1f}小时</p>
+                        <p><strong>平均购买:</strong> {seg_data['purchase_count'].mean():.1f}次</p>
+                        <p><strong>平均消费:</strong> ¥{seg_data['total_spent'].mean():,.0f}</p>
+                        <p><strong>平均行为分:</strong> {seg_data['behavior_score'].mean():.1f}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
     st.markdown("---")
     
     col1, col2 = st.columns(2)
@@ -463,6 +720,30 @@ def main():
         st.pyplot(region_ns_fig, use_container_width=True)
         if selected_province != "全部":
             st.caption("💡 该图表基于全量数据绘制，不受省份筛选影响")
+
+    st.markdown("---")
+
+    bcol1, bcol2 = st.columns(2)
+
+    with bcol1:
+        st.subheader("🥧 用户行为分群分布")
+        behavior_pie_fig = create_behavior_pie_chart(df_full)
+        st.pyplot(behavior_pie_fig, use_container_width=True)
+        if selected_segment or selected_province != "全部" or min_login_freq > 0 or min_purchase > 0 or min_online_hours > 0:
+            st.caption("💡 该图表基于全量数据绘制，不受筛选条件影响")
+
+    with bcol2:
+        st.subheader("📊 行为群体关键指标对比")
+        segment_compare_fig = create_segment_comparison_chart(df_full)
+        st.pyplot(segment_compare_fig, use_container_width=True)
+        if selected_segment or selected_province != "全部" or min_login_freq > 0 or min_purchase > 0 or min_online_hours > 0:
+            st.caption("💡 该图表基于全量数据绘制，不受筛选条件影响")
+    
+    st.markdown("---")
+
+    st.subheader("📋 行为分群统计摘要")
+    segment_summary = get_segment_summary(df_filtered if len(df_filtered) > 0 else df_full)
+    st.dataframe(segment_summary, use_container_width=True, hide_index=True)
     
     st.markdown("---")
     
@@ -502,8 +783,13 @@ def main():
     if show_data:
         st.markdown("---")
         st.subheader("📄 原始数据预览")
-        display_cols = ['user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type']
-        st.dataframe(df_filtered[display_cols].head(100), use_container_width=True)
+        display_cols = [
+            'user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type',
+            'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
+            'total_spent', 'last_active_days', 'page_views', 'click_count', 'behavior_score'
+        ]
+        available_cols = [col for col in display_cols if col in df_filtered.columns]
+        st.dataframe(df_filtered[available_cols].head(100), use_container_width=True)
     
     st.markdown("---")
     st.markdown(
