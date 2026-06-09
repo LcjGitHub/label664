@@ -54,6 +54,10 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
+plt.rcParams['axes.unicode_minus'] = False
+sns.set(font='SimHei')
+
 
 @st.cache_data
 def generate_mock_data(n_samples=3000):
@@ -118,6 +122,11 @@ def generate_mock_data(n_samples=3000):
 def create_gender_chart(df):
     fig, ax = plt.subplots(figsize=(10, 5))
     
+    font_prop = FontProperties(family='SimHei', size=12)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(family='SimHei', size=11, weight='bold')
+    
     gender_counts = df['gender'].value_counts()
     colors = ['#3498DB', '#E74C3C']
     
@@ -129,9 +138,9 @@ def create_gender_chart(df):
         linewidth=2
     )
     
-    ax.set_xlabel('用户数量', fontsize=12, fontweight='bold')
-    ax.set_ylabel('性别', fontsize=12, fontweight='bold')
-    ax.set_title('用户性别分布', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('用户数量', fontproperties=font_label)
+    ax.set_ylabel('性别', fontproperties=font_label)
+    ax.set_title('用户性别分布', fontproperties=font_title, pad=20)
     
     total = len(df)
     for i, (bar, count) in enumerate(zip(bars, gender_counts.values)):
@@ -141,10 +150,12 @@ def create_gender_chart(df):
             bar.get_y() + bar.get_height()/2,
             f'{count:,} ({percentage:.1f}%)',
             va='center',
-            fontsize=11,
-            fontweight='bold',
+            fontproperties=font_text,
             color='#2C3E50'
         )
+    
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
     
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -157,6 +168,12 @@ def create_gender_chart(df):
 
 def create_age_gender_chart(df):
     fig, ax = plt.subplots(figsize=(12, 6))
+    
+    font_prop = FontProperties(family='SimHei', size=11)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(family='SimHei', size=9, weight='bold')
+    font_legend = FontProperties(family='SimHei', size=11)
     
     age_order = ['18-24', '25-34', '35-44', '45-54', '55+']
     
@@ -174,12 +191,15 @@ def create_age_gender_chart(df):
     bars2 = ax.bar(x + width/2, female_counts, width, 
                    label='女', color='#E74C3C', edgecolor='white', linewidth=1.5)
     
-    ax.set_xlabel('年龄段', fontsize=12, fontweight='bold')
-    ax.set_ylabel('用户数量', fontsize=12, fontweight='bold')
-    ax.set_title('用户年龄与性别分布', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('年龄段', fontproperties=font_label)
+    ax.set_ylabel('用户数量', fontproperties=font_label)
+    ax.set_title('用户年龄与性别分布', fontproperties=font_title, pad=20)
     ax.set_xticks(x)
-    ax.set_xticklabels(age_order, fontsize=11)
-    ax.legend(fontsize=11, frameon=True, shadow=True)
+    ax.set_xticklabels(age_order, fontproperties=font_prop)
+    ax.legend(prop=font_legend, frameon=True, shadow=True)
+    
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
     
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -196,7 +216,7 @@ def create_age_gender_chart(df):
                 height + 10,
                 f'{int(height)}',
                 ha='center', va='bottom',
-                fontsize=9, fontweight='bold',
+                fontproperties=font_text,
                 color='#2C3E50'
             )
     
@@ -209,7 +229,7 @@ def create_age_gender_chart(df):
                 height + 10,
                 f'{int(height)}',
                 ha='center', va='bottom',
-                fontsize=9, fontweight='bold',
+                fontproperties=font_text,
                 color='#2C3E50'
             )
     
@@ -219,6 +239,11 @@ def create_age_gender_chart(df):
 
 def create_province_rank_chart(df, top_n=15):
     fig, ax = plt.subplots(figsize=(12, 8))
+    
+    font_prop = FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(family='SimHei', size=10, weight='bold')
     
     province_counts = df['province'].value_counts().head(top_n)
     
@@ -232,9 +257,9 @@ def create_province_rank_chart(df, top_n=15):
         linewidth=1.5
     )
     
-    ax.set_xlabel('用户数量', fontsize=12, fontweight='bold')
-    ax.set_ylabel('省份', fontsize=12, fontweight='bold')
-    ax.set_title(f'用户省份分布 TOP{top_n}', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('用户数量', fontproperties=font_label)
+    ax.set_ylabel('省份', fontproperties=font_label)
+    ax.set_title(f'用户省份分布 TOP{top_n}', fontproperties=font_title, pad=20)
     
     total = len(df)
     for i, (bar, count) in enumerate(zip(bars, province_counts.values[::-1])):
@@ -244,10 +269,12 @@ def create_province_rank_chart(df, top_n=15):
             bar.get_y() + bar.get_height() / 2,
             f'{count:,} ({percentage:.1f}%)',
             va='center',
-            fontsize=10,
-            fontweight='bold',
+            fontproperties=font_text,
             color='#2C3E50'
         )
+    
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
     
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -260,6 +287,11 @@ def create_province_rank_chart(df, top_n=15):
 
 def create_region_ns_chart(df):
     fig, ax = plt.subplots(figsize=(10, 6))
+    
+    font_prop = FontProperties(family='SimHei', size=12)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(family='SimHei', size=12, weight='bold')
     
     region_counts = df['region_type'].value_counts()
     region_order = ['南方', '北方']
@@ -277,9 +309,9 @@ def create_region_ns_chart(df):
         width=0.5
     )
     
-    ax.set_xlabel('地域', fontsize=12, fontweight='bold')
-    ax.set_ylabel('用户数量', fontsize=12, fontweight='bold')
-    ax.set_title('南北方用户分布对比', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('地域', fontproperties=font_label)
+    ax.set_ylabel('用户数量', fontproperties=font_label)
+    ax.set_title('南北方用户分布对比', fontproperties=font_title, pad=20)
     
     total = len(df)
     for bar, count in zip(bars, region_counts.values):
@@ -291,10 +323,12 @@ def create_region_ns_chart(df):
             f'{int(count):,} ({percentage:.1f}%)',
             ha='center',
             va='bottom',
-            fontsize=12,
-            fontweight='bold',
+            fontproperties=font_text,
             color='#2C3E50'
         )
+    
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
     
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -317,7 +351,7 @@ def main():
         max_value=5000,
         value=3000,
         step=100,
-        help="选择生成的 mock 数据样本数量"
+        help="选择生成的模拟数据样本数量"
     )
     
     st.sidebar.subheader("🗺️ 地域筛选")
@@ -326,7 +360,7 @@ def main():
         "选择省份",
         options=["全部"] + all_provinces,
         index=0,
-        help="选择特定省份查看用户分布"
+        help="选择特定省份查看该省份的用户分布详情"
     )
     
     show_data = st.sidebar.checkbox("显示原始数据", value=False)
@@ -338,7 +372,9 @@ def main():
     else:
         df_filtered = df
     
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    df_full = df
+    
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
     with col1:
         st.metric(
@@ -387,6 +423,14 @@ def main():
             delta=f"{south_count/len(df_filtered)*100:.1f}%"
         )
     
+    with col7:
+        north_count = len(df_filtered[df_filtered['region_type'] == '北方'])
+        st.metric(
+            label="北方用户",
+            value=f"{north_count:,}",
+            delta=f"{north_count/len(df_filtered)*100:.1f}%"
+        )
+    
     st.markdown("---")
     
     col1, col2 = st.columns(2)
@@ -407,14 +451,18 @@ def main():
     
     with col1:
         st.subheader("🏆 省份用户数量排名")
-        top_n = st.slider("显示 TOP N 省份", min_value=5, max_value=30, value=15, key="province_top_n")
-        province_fig = create_province_rank_chart(df_filtered, top_n=top_n)
+        top_n = st.slider("显示排名靠前的省份数量", min_value=5, max_value=30, value=15, key="province_top_n")
+        province_fig = create_province_rank_chart(df_full, top_n=top_n)
         st.pyplot(province_fig, use_container_width=True)
+        if selected_province != "全部":
+            st.caption("💡 该图表基于全量数据绘制，不受省份筛选影响")
     
     with col2:
         st.subheader("🌏 南北方用户分布对比")
-        region_ns_fig = create_region_ns_chart(df_filtered)
+        region_ns_fig = create_region_ns_chart(df_full)
         st.pyplot(region_ns_fig, use_container_width=True)
+        if selected_province != "全部":
+            st.caption("💡 该图表基于全量数据绘制，不受省份筛选影响")
     
     st.markdown("---")
     
@@ -437,7 +485,7 @@ def main():
         st.dataframe(age_summary, use_container_width=True, hide_index=True)
     
     with summary_col3:
-        st.markdown("### 省份统计 TOP10")
+        st.markdown("### 省份统计前十")
         province_summary = df_filtered['province'].value_counts().head(10).reset_index()
         province_summary.columns = ['省份', '用户数']
         province_summary['占比'] = (province_summary['用户数'] / len(df_filtered) * 100).round(2).astype(str) + '%'
@@ -445,7 +493,7 @@ def main():
     
     if selected_province != "全部":
         st.markdown("---")
-        st.subheader(f"🏙️ {selected_province} 城市分布 TOP10")
+        st.subheader(f"🏙️ {selected_province} 城市分布前十")
         city_summary = df_filtered['city'].value_counts().head(10).reset_index()
         city_summary.columns = ['城市', '用户数']
         city_summary['占比'] = (city_summary['用户数'] / len(df_filtered) * 100).round(2).astype(str) + '%'
@@ -461,8 +509,8 @@ def main():
     st.markdown(
         """
         <div style='text-align: center; color: #7f8c8d; padding: 20px;'>
-            <p>💡 用户画像分析系统 | 基于 Streamlit + Seaborn 构建</p>
-            <p>数据为 Mock 生成，仅用于演示目的</p>
+            <p>💡 用户画像分析系统 | 基于 Streamlit 与 Matplotlib 构建</p>
+            <p>数据为模拟生成，仅用于演示目的</p>
         </div>
         """,
         unsafe_allow_html=True
