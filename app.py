@@ -1166,6 +1166,9 @@ def main():
             'days_normal_max': None
         }
 
+    if 'last_n_samples' not in st.session_state:
+        st.session_state.last_n_samples = None
+
     st.sidebar.header("🎨 主题设置")
     theme_options = get_theme_options()
     theme_keys = [opt[0] for opt in theme_options]
@@ -1206,6 +1209,18 @@ def main():
     df_behavior = generate_behavior_data(df_profile['user_id'].tolist())
     df_behavior = calculate_behavior_scores(df_behavior)
     df_preferences = generate_preference_data(df_profile['user_id'].tolist())
+
+    if st.session_state.last_n_samples is not None and st.session_state.last_n_samples != n_samples:
+        st.session_state.segment_thresholds = {
+            'score_normal_min': None,
+            'score_active_min': None,
+            'days_active_max': None,
+            'days_normal_max': None
+        }
+        for _k in ["score_thresholds_slider", "days_active_max_slider", "days_normal_max_slider"]:
+            if _k in st.session_state:
+                del st.session_state[_k]
+    st.session_state.last_n_samples = n_samples
     
     st.sidebar.subheader("🗺️ 地域筛选")
     all_provinces = get_all_provinces()
@@ -1238,7 +1253,7 @@ def main():
                 float(default_score_active)
             ),
             step=0.5,
-            help="左侧滑块为普通用户最低得分，右侧滑块为活跃用户最低得分",
+            help="左侧滑块为普通用户最低得分，右侧滑块为活跃用户最低得分；默认使用当前数据 33% / 66% 分位数",
             key="score_thresholds_slider"
         )
         score_normal_min, score_active_min = score_thresholds
@@ -1267,7 +1282,7 @@ def main():
             max_value=min(60, days_max_val),
             value=int(default_days_active),
             step=1,
-            help="最后活跃天数在此值以内才可能被判定为活跃用户",
+            help="最后活跃天数在此值以内才可能被判定为活跃用户；默认 14 天，推荐阈值按数据 25% 分位数自动计算（1-30 天）",
             key="days_active_max_slider"
         )
         days_normal_max = st.slider(
@@ -1276,7 +1291,7 @@ def main():
             max_value=days_max_val,
             value=int(max(default_days_normal, days_active_max + 1)),
             step=1,
-            help="最后活跃天数在此值以内才可能被判定为普通用户，超过则为沉睡用户",
+            help="最后活跃天数在此值以内才可能被判定为普通用户，超过则为沉睡用户；默认 60 天，推荐阈值按数据 60% 分位数自动计算（活跃用户上限+1 至 90 天）",
             key="days_normal_max_slider"
         )
 
@@ -1287,24 +1302,35 @@ def main():
         st.markdown("---")
         rec_col1, rec_col2 = st.columns(2)
         with rec_col1:
-            if st.button("🎯 推荐阈值", use_container_width=True, help="根据数据分布自动设置合理的分群阈值"):
+            if st.button("🎯 推荐阈值", use_container_width=True, help="根据当前数据分布自动推荐：得分取 33% / 66% 分位数，天数取 25% / 60% 分位数（限 1-30 / 活跃+1-90 天）"):
                 rec_thresholds = get_recommended_thresholds(df_behavior)
                 st.session_state.segment_thresholds = rec_thresholds
-                for _k in ["score_thresholds_slider", "days_active_max_slider", "days_normal_max_slider"]:
-                    if _k in st.session_state:
-                        del st.session_state[_k]
+                st.session_state.score_thresholds_slider = (
+                    float(rec_thresholds['score_normal_min']),
+                    float(rec_thresholds['score_active_min'])
+                )
+                st.session_state.days_active_max_slider = int(rec_thresholds['days_active_max'])
+                _rec_days_normal = int(max(rec_thresholds['days_normal_max'], rec_thresholds['days_active_max'] + 1))
+                st.session_state.days_normal_max_slider = _rec_days_normal
                 st.rerun()
         with rec_col2:
-            if st.button("↺ 重置默认", use_container_width=True, help="重置为默认阈值（33%/66%分位数，14/60天）"):
+            if st.button("↺ 重置默认", use_container_width=True, help="重置为默认阈值：得分取当前数据 33% / 66% 分位数，天数固定为 14 天 / 60 天"):
+                def_score_normal = round(float(df_behavior['behavior_score'].quantile(0.33)), 2)
+                def_score_active = round(float(df_behavior['behavior_score'].quantile(0.66)), 2)
+                def_days_active = 14
+                def_days_normal = 60
                 st.session_state.segment_thresholds = {
-                    'score_normal_min': None,
-                    'score_active_min': None,
-                    'days_active_max': None,
-                    'days_normal_max': None
+                    'score_normal_min': def_score_normal,
+                    'score_active_min': def_score_active,
+                    'days_active_max': def_days_active,
+                    'days_normal_max': def_days_normal
                 }
-                for _k in ["score_thresholds_slider", "days_active_max_slider", "days_normal_max_slider"]:
-                    if _k in st.session_state:
-                        del st.session_state[_k]
+                st.session_state.score_thresholds_slider = (
+                    float(def_score_normal),
+                    float(def_score_active)
+                )
+                st.session_state.days_active_max_slider = def_days_active
+                st.session_state.days_normal_max_slider = max(def_days_normal, def_days_active + 1)
                 st.rerun()
 
         st.markdown("---")
