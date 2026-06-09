@@ -19,6 +19,37 @@ from user_behavior import (
     segment_users,
     get_segment_summary
 )
+import os
+import sys as _sys
+def get_available_chinese_font():
+    if _sys.platform.startswith('win'):
+        candidates = [
+            'C:/Windows/Fonts/simhei.ttf',
+            'C:/Windows/Fonts/msyh.ttc',
+            'C:/Windows/Fonts/msyhbd.ttc',
+            'C:/Windows/Fonts/simsun.ttc',
+            'C:/Windows/Fonts/simkai.ttf',
+            'C:/Windows/Fonts/simfang.ttf'
+        ]
+    elif _sys.platform == 'darwin':
+        candidates = [
+            '/System/Library/Fonts/PingFang.ttc',
+            '/System/Library/Fonts/STHeiti Light.ttc',
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',
+            '/Library/Fonts/Arial Unicode.ttf'
+        ]
+    else:
+        candidates = [
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/arphic/uming.ttc',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+        ]
+    for font_path in candidates:
+        if os.path.exists(font_path):
+            return font_path
+    return None
+
 from user_preferences import (
     generate_preference_data,
     get_preference_ranking,
@@ -281,7 +312,7 @@ def create_province_rank_chart(df, top_n=15):
     
     ax.set_xlabel('用户数量', fontproperties=font_label)
     ax.set_ylabel('省份', fontproperties=font_label)
-    ax.set_title(f'用户省份分布 TOP{top_n}', fontproperties=font_title, pad=20)
+    ax.set_title(f'用户省份分布前{top_n}名', fontproperties=font_title, pad=20)
     
     total = len(df)
     for i, (bar, count) in enumerate(zip(bars, province_counts.values[::-1])):
@@ -477,16 +508,18 @@ def create_segment_comparison_chart(df):
     return fig
 
 
-def create_preference_wordcloud(df, pref_type):
+def create_preference_wordcloud(df, pref_type, _version=3):
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    font_prop = FontProperties(family='SimHei', size=14, weight='bold')
-    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    _fp = get_available_chinese_font()
+    font_prop = FontProperties(fname=_fp, size=14, weight='bold') if _fp else FontProperties(family='SimHei', size=14, weight='bold')
+    font_title = FontProperties(fname=_fp, size=16, weight='bold') if _fp else FontProperties(family='SimHei', size=16, weight='bold')
 
     word_freq = get_preference_wordcloud_data(df, pref_type)
+    chinese_font_path = get_available_chinese_font()
+    print(f"[DEBUG WordCloud] font_path={chinese_font_path}")
 
-    wc = WordCloud(
-        font_path='C:/Windows/Fonts/simhei.ttf',
+    wc_kwargs = dict(
         width=800,
         height=500,
         background_color='white',
@@ -498,6 +531,10 @@ def create_preference_wordcloud(df, pref_type):
         margin=10,
         random_state=42
     )
+    if chinese_font_path:
+        wc_kwargs['font_path'] = chinese_font_path
+
+    wc = WordCloud(**wc_kwargs)
 
     if word_freq:
         wc.generate_from_frequencies(word_freq)
@@ -516,11 +553,12 @@ def create_preference_wordcloud(df, pref_type):
 def create_gender_preference_chart(df_with_gender, pref_type, top_n=8):
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    font_prop = FontProperties(family='SimHei', size=11)
-    font_title = FontProperties(family='SimHei', size=16, weight='bold')
-    font_label = FontProperties(family='SimHei', size=12, weight='bold')
-    font_text = FontProperties(family='SimHei', size=10, weight='bold')
-    font_legend = FontProperties(family='SimHei', size=11)
+    _fp = get_available_chinese_font()
+    font_prop = FontProperties(fname=_fp, size=11) if _fp else FontProperties(family='SimHei', size=11)
+    font_title = FontProperties(fname=_fp, size=16, weight='bold') if _fp else FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(fname=_fp, size=10, weight='bold') if _fp else FontProperties(family='SimHei', size=10, weight='bold')
+    font_legend = FontProperties(fname=_fp, size=11) if _fp else FontProperties(family='SimHei', size=11)
 
     comp_df = get_gender_preference_comparison(df_with_gender, pref_type, top_n=top_n)
 
@@ -547,7 +585,7 @@ def create_gender_preference_chart(df_with_gender, pref_type, top_n=8):
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontproperties=font_prop)
     ax.set_xlabel('偏好占比 (%)', fontproperties=font_label)
-    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比 TOP{top_n}', fontproperties=font_title, pad=20)
+    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比前{top_n}名', fontproperties=font_title, pad=20)
     ax.legend(prop=font_legend, frameon=True, shadow=True)
 
     for bar in bars1:
@@ -610,29 +648,6 @@ def main():
         help="选择一个或多个行为群体查看详细数据"
     )
 
-    st.sidebar.subheader("📊 行为指标筛选")
-    min_login_freq = st.sidebar.slider(
-        "最低登录频率（次）",
-        min_value=0,
-        max_value=90,
-        value=0,
-        step=1
-    )
-    min_purchase = st.sidebar.slider(
-        "最低购买次数",
-        min_value=0,
-        max_value=50,
-        value=0,
-        step=1
-    )
-    min_online_hours = st.sidebar.slider(
-        "最低在线时长（小时）",
-        min_value=0.0,
-        max_value=500.0,
-        value=0.0,
-        step=1.0
-    )
-
     st.sidebar.subheader("🎨 偏好分析")
     pref_type_options = list(PREFERENCE_TYPES.keys())
     pref_type_labels = list(PREFERENCE_TYPES.values())
@@ -658,6 +673,29 @@ def main():
         value=10,
         step=1,
         help="热门偏好标签排名显示的数量"
+    )
+
+    st.sidebar.subheader("📊 行为指标筛选")
+    min_login_freq = st.sidebar.slider(
+        "最低登录频率（次）",
+        min_value=0,
+        max_value=90,
+        value=0,
+        step=1
+    )
+    min_purchase = st.sidebar.slider(
+        "最低购买次数",
+        min_value=0,
+        max_value=50,
+        value=0,
+        step=1
+    )
+    min_online_hours = st.sidebar.slider(
+        "最低在线时长（小时）",
+        min_value=0.0,
+        max_value=500.0,
+        value=0.0,
+        step=1.0
     )
     
     show_data = st.sidebar.checkbox("显示原始数据", value=False)
@@ -711,7 +749,9 @@ def main():
                     'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
                     'total_spent', 'last_active_days', 'page_views', 'click_count',
                     'login_score', 'online_score', 'purchase_score', 'spent_score',
-                    'activity_score', 'behavior_score'
+                    'activity_score', 'behavior_score',
+                    'top_interest', 'top_consumption', 'top_channel',
+                    'interest_concentration', 'consumption_concentration', 'channel_concentration'
                 ]
                 available_cols = [col for col in display_cols if col in export_df.columns]
                 export_df = export_df[available_cols]
@@ -1025,12 +1065,6 @@ def main():
         st.subheader("📊 行为群体关键指标对比")
         segment_compare_fig = create_segment_comparison_chart(df_behavior_view)
         st.pyplot(segment_compare_fig, use_container_width=True)
-    
-    st.markdown("---")
-
-    st.subheader("📋 行为分群统计摘要")
-    segment_summary = get_segment_summary(df_filtered if len(df_filtered) > 0 else df_full)
-    st.dataframe(segment_summary, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
@@ -1042,33 +1076,53 @@ def main():
     concentration = get_concentration_stats(df_pref_view)
 
     with pcol1:
-        st.metric(
-            label="兴趣偏好集中度",
-            value=f"{concentration['interest_mean']:.1f}%",
-            delta=f"±{concentration['interest_std']:.1f}%"
+        st.markdown(
+            f"""
+            <div class="metric-card" style="border-top: 4px solid #3498DB;">
+                <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">兴趣偏好集中度</p>
+                <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{concentration['interest_mean']:.1f}%</p>
+                <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['interest_std']:.1f}%</p>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
     with pcol2:
-        st.metric(
-            label="消费偏好集中度",
-            value=f"{concentration['consumption_mean']:.1f}%",
-            delta=f"±{concentration['consumption_std']:.1f}%"
+        st.markdown(
+            f"""
+            <div class="metric-card" style="border-top: 4px solid #E74C3C;">
+                <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">消费偏好集中度</p>
+                <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{concentration['consumption_mean']:.1f}%</p>
+                <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['consumption_std']:.1f}%</p>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
     with pcol3:
-        st.metric(
-            label="渠道偏好集中度",
-            value=f"{concentration['channel_mean']:.1f}%",
-            delta=f"±{concentration['channel_std']:.1f}%"
+        st.markdown(
+            f"""
+            <div class="metric-card" style="border-top: 4px solid #27AE60;">
+                <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">渠道偏好集中度</p>
+                <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{concentration['channel_mean']:.1f}%</p>
+                <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['channel_std']:.1f}%</p>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
     top_interest_tag = get_preference_ranking(df_pref_view, 'interest', top_n=1)
     with pcol4:
         if len(top_interest_tag) > 0:
-            st.metric(
-                label="热门兴趣标签",
-                value=top_interest_tag.iloc[0]['标签'],
-                delta=f"占比 {top_interest_tag.iloc[0]['占比']:.1f}%"
+            st.markdown(
+                f"""
+                <div class="metric-card" style="border-top: 4px solid #F39C12;">
+                    <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">热门兴趣标签</p>
+                    <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{top_interest_tag.iloc[0]['标签']}</p>
+                    <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">占比 {top_interest_tag.iloc[0]['占比']:.1f}%</p>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
     pref_info_col1, pref_info_col2 = st.columns(2)
@@ -1076,11 +1130,11 @@ def main():
         st.info(
             f"📊 当前分析维度: **{PREFERENCE_TYPES[selected_pref_type]}**\n\n"
             f"共 {len(TAG_CATEGORIES[selected_pref_type])} 个可选标签\n\n"
-            f"偏好集中度表示用户 Top3 偏好权重之和的平均值，越高说明用户偏好越集中"
+            f"偏好集中度表示用户前三名偏好权重之和的平均值，越高说明用户偏好越集中"
         )
     with pref_info_col2:
         st.success(
-            f"🏆 热门 {PREFERENCE_TYPES[selected_pref_type]} TOP3:\n\n"
+            f"🏆 热门 {PREFERENCE_TYPES[selected_pref_type]} 前三名:\n\n"
             + "\n".join([
                 f"{i+1}. {row['标签']} ({row['占比']:.1f}%)"
                 for i, row in get_preference_ranking(df_pref_view, selected_pref_type, top_n=3).iterrows()
@@ -1105,7 +1159,7 @@ def main():
 
     st.markdown("---")
 
-    st.subheader(f"🏆 热门{PREFERENCE_TYPES[selected_pref_type]}排名 TOP{ranking_top_n}")
+    st.subheader(f"🏆 热门{PREFERENCE_TYPES[selected_pref_type]}排名前{ranking_top_n}名")
     pref_ranking = get_preference_ranking(df_pref_view, selected_pref_type, top_n=ranking_top_n)
 
     rank_col1, rank_col2 = st.columns([2, 3])
@@ -1116,10 +1170,11 @@ def main():
     with rank_col2:
         fig_rank, ax_rank = plt.subplots(figsize=(10, 8))
 
-        font_prop = FontProperties(family='SimHei', size=10)
-        font_title = FontProperties(family='SimHei', size=14, weight='bold')
-        font_label = FontProperties(family='SimHei', size=12, weight='bold')
-        font_text = FontProperties(family='SimHei', size=10, weight='bold')
+        _fp = get_available_chinese_font()
+        font_prop = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+        font_title = FontProperties(fname=_fp, size=14, weight='bold') if _fp else FontProperties(family='SimHei', size=14, weight='bold')
+        font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
+        font_text = FontProperties(fname=_fp, size=10, weight='bold') if _fp else FontProperties(family='SimHei', size=10, weight='bold')
 
         colors = sns.color_palette("YlOrRd_r", len(pref_ranking))
         bars = ax_rank.barh(
@@ -1130,7 +1185,6 @@ def main():
             linewidth=1.5
         )
 
-        total_weight = pref_ranking['权重'].sum()
         for bar, pct in zip(bars, pref_ranking['占比'][::-1].values):
             ax_rank.text(
                 bar.get_width() + pref_ranking['权重'].max() * 0.01,
@@ -1170,11 +1224,17 @@ def main():
 
     for pt, pc in zip(pref_type_list, pref_col_list):
         with pc:
-            st.markdown(f"##### 🔝 {PREFERENCE_TYPES[pt]} TOP5")
+            st.markdown(f"##### 🔝 {PREFERENCE_TYPES[pt]} 前五名")
             top5 = get_preference_ranking(df_pref_view, pt, top_n=5)
             display_top5 = top5[['排名', '标签', '占比']].copy()
             display_top5['占比'] = display_top5['占比'].astype(str) + '%'
             st.dataframe(display_top5, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    st.subheader("📋 行为分群统计摘要")
+    segment_summary = get_segment_summary(df_filtered if len(df_filtered) > 0 else df_full)
+    st.dataframe(segment_summary, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
@@ -1217,7 +1277,9 @@ def main():
         display_cols = [
             'user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type',
             'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
-            'total_spent', 'last_active_days', 'page_views', 'click_count', 'behavior_score'
+            'total_spent', 'last_active_days', 'page_views', 'click_count', 'behavior_score',
+            'top_interest', 'top_consumption', 'top_channel',
+            'interest_concentration', 'consumption_concentration', 'channel_concentration'
         ]
         available_cols = [col for col in display_cols if col in df_filtered.columns]
         st.dataframe(df_filtered[available_cols].head(100), use_container_width=True)

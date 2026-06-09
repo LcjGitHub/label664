@@ -1,6 +1,40 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
+import sys
+
+
+def get_available_chinese_font():
+    if sys.platform.startswith('win'):
+        candidates = [
+            'C:/Windows/Fonts/simhei.ttf',
+            'C:/Windows/Fonts/msyh.ttc',
+            'C:/Windows/Fonts/msyhbd.ttc',
+            'C:/Windows/Fonts/simsun.ttc',
+            'C:/Windows/Fonts/simkai.ttf',
+            'C:/Windows/Fonts/simfang.ttf'
+        ]
+    elif sys.platform == 'darwin':
+        candidates = [
+            '/System/Library/Fonts/PingFang.ttc',
+            '/System/Library/Fonts/STHeiti Light.ttc',
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',
+            '/Library/Fonts/Arial Unicode.ttf'
+        ]
+    else:
+        candidates = [
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/arphic/uming.ttc',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+        ]
+
+    for font_path in candidates:
+        if os.path.exists(font_path):
+            return font_path
+
+    return None
 
 
 INTEREST_TAGS = [
@@ -117,8 +151,9 @@ def get_preference_ranking(df, pref_type, top_n=10):
     prefs = aggregate_preferences(df, pref_type)
     all_total = sum(prefs.values()) or 1
     items = list(prefs.items())[:top_n]
-    result = pd.DataFrame(items, columns=['标签', '权重'])
-    result['占比'] = (result['权重'] / all_total * 100).round(2)
+    result = pd.DataFrame(items, columns=['标签', '原始权重'])
+    result['权重'] = result['原始权重'].round(1)
+    result['占比'] = (result['原始权重'] / all_total * 100).round(1)
     result['排名'] = range(1, len(result) + 1)
     return result[['排名', '标签', '权重', '占比']]
 
