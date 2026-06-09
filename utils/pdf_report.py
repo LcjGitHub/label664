@@ -78,6 +78,7 @@ def get_theme_colors(theme):
     chart = theme.get('chart', {})
     return {
         'bg': tc.get('card_background', '#ffffff'),
+        'background': tc.get('background', '#f8f9fa'),
         'text': tc.get('primary_text', '#2C3E50'),
         'secondary_text': tc.get('secondary_text', '#7f8c8d'),
         'accent_blue': tc.get('accent_blue', '#3498DB'),
@@ -86,6 +87,7 @@ def get_theme_colors(theme):
         'accent_orange': tc.get('accent_orange', '#F39C12'),
         'accent_gray': tc.get('accent_gray', '#95A5A6'),
         'border': tc.get('border', '#e0e0e0'),
+        'table_alt_bg': tc.get('table_alt_bg', '#f7f9fc'),
         'chart_figure_bg': chart.get('figure_facecolor', 'white'),
         'chart_axes_bg': chart.get('axes_facecolor', 'white'),
         'chart_text': chart.get('text_color', '#2C3E50'),
@@ -278,7 +280,7 @@ def create_data_table(df, theme_colors, styles, max_rows=20):
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [
             hex_to_color(theme_colors['bg']),
-            hex_to_color('#f7f9fc' if theme_colors['bg'] == '#ffffff' else '#1a2744')
+            hex_to_color(theme_colors['table_alt_bg'])
         ]),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
@@ -605,17 +607,20 @@ def generate_generation_chart(df, theme):
     return fig
 
 
-def get_summary_tables(df):
+def get_summary_tables(df, selected_charts=None):
+    if selected_charts is None:
+        selected_charts = ['gender', 'age', 'region', 'segment', 'preference', 'generation']
+
     tables = {}
 
-    if 'gender' in df.columns and len(df) > 0:
+    if 'gender' in selected_charts and 'gender' in df.columns and len(df) > 0:
         gender_summary = df['gender'].value_counts().reset_index()
         gender_summary.columns = ['性别', '用户数']
         total = len(df)
         gender_summary['占比(%)'] = (gender_summary['用户数'] / total * 100).round(2)
         tables['gender'] = gender_summary
 
-    if 'age_group' in df.columns and len(df) > 0:
+    if 'age' in selected_charts and 'age_group' in df.columns and len(df) > 0:
         age_order = ['18以下', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
         age_summary = df['age_group'].value_counts().reindex(age_order).dropna().reset_index()
         age_summary.columns = ['年龄段', '用户数']
@@ -623,18 +628,36 @@ def get_summary_tables(df):
         age_summary['占比(%)'] = (age_summary['用户数'] / total * 100).round(2)
         tables['age'] = age_summary
 
-    if 'user_segment' in df.columns and len(df) > 0:
+    if 'region' in selected_charts and 'province' in df.columns and len(df) > 0:
+        prov_summary = df['province'].value_counts().head(10).reset_index()
+        prov_summary.columns = ['省份', '用户数']
+        total = len(df)
+        prov_summary['占比(%)'] = (prov_summary['用户数'] / total * 100).round(2)
+        tables['region'] = prov_summary
+
+    if 'segment' in selected_charts and 'user_segment' in df.columns and len(df) > 0:
         from user_behavior import get_segment_summary
         seg_summary = get_segment_summary(df)
         if len(seg_summary) > 0:
             tables['segment'] = seg_summary
 
-    if 'province' in df.columns and len(df) > 0:
-        prov_summary = df['province'].value_counts().head(10).reset_index()
-        prov_summary.columns = ['省份', '用户数']
+    if 'preference' in selected_charts and len(df) > 0:
+        from user_preferences import get_preference_ranking, PREFERENCE_TYPES
+        pref_tables = {}
+        for pref_type in PREFERENCE_TYPES.keys():
+            ranking = get_preference_ranking(df, pref_type, top_n=8)
+            if len(ranking) > 0:
+                pref_tables[pref_type] = ranking
+        if pref_tables:
+            tables['preference'] = pref_tables
+
+    if 'generation' in selected_charts and 'generation' in df.columns and len(df) > 0:
+        GENERATION_ORDER = ['00后', '90后', '80后', '70后', '60后', '其他']
+        gen_summary = df['generation'].value_counts().reindex(GENERATION_ORDER).dropna().reset_index()
+        gen_summary.columns = ['代际', '用户数']
         total = len(df)
-        prov_summary['占比(%)'] = (prov_summary['用户数'] / total * 100).round(2)
-        tables['province'] = prov_summary
+        gen_summary['占比(%)'] = (gen_summary['用户数'] / total * 100).round(2)
+        tables['generation'] = gen_summary
 
     return tables
 
@@ -666,6 +689,14 @@ def generate_pdf_report(
     styles = create_styles(theme_colors)
 
     buffer = BytesIO()
+
+    page_bg_color = hex_to_color(theme_colors['background'])
+
+    def draw_page_bg(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(page_bg_color)
+        canvas.rect(0, 0, doc.pagesize[0], doc.pagesize[1], fill=1, stroke=0)
+        canvas.restoreState()
 
     doc = SimpleDocTemplate(
         buffer,
@@ -742,6 +773,9 @@ def generate_pdf_report(
         story.append(Spacer(1, 2 * mm))
         pref_fig_consumption = generate_preference_chart(df, theme, 'consumption')
         story.append(fig_to_image(pref_fig_consumption, width=160 * mm, height=85 * mm))
+        story.append(Spacer(1, 2 * mm))
+        pref_fig_channel = generate_preference_chart(df, theme, 'channel')
+        story.append(fig_to_image(pref_fig_channel, width=160 * mm, height=85 * mm))
         story.append(Spacer(1, 3 * mm))
 
     if 'generation' in selected_charts:
@@ -753,32 +787,57 @@ def generate_pdf_report(
     story.append(PageBreak())
     story.append(Paragraph("三、数据摘要表格", styles['heading1']))
 
-    summary_tables = get_summary_tables(df)
+    summary_tables = get_summary_tables(df, selected_charts)
+
+    section_num = 1
 
     if 'gender' in summary_tables:
-        story.append(Paragraph("3.1 性别统计", styles['heading2']))
+        story.append(Paragraph(f"3.{section_num} 性别统计", styles['heading2']))
         tbl = create_data_table(summary_tables['gender'], theme_colors, styles)
         if tbl:
             story.append(tbl)
         story.append(Spacer(1, 3 * mm))
+        section_num += 1
 
     if 'age' in summary_tables:
-        story.append(Paragraph("3.2 年龄段统计", styles['heading2']))
+        story.append(Paragraph(f"3.{section_num} 年龄段统计", styles['heading2']))
         tbl = create_data_table(summary_tables['age'], theme_colors, styles)
         if tbl:
             story.append(tbl)
         story.append(Spacer(1, 3 * mm))
+        section_num += 1
+
+    if 'region' in summary_tables:
+        story.append(Paragraph(f"3.{section_num} 省份分布统计 TOP10", styles['heading2']))
+        tbl = create_data_table(summary_tables['region'], theme_colors, styles)
+        if tbl:
+            story.append(tbl)
+        story.append(Spacer(1, 3 * mm))
+        section_num += 1
 
     if 'segment' in summary_tables:
-        story.append(Paragraph("3.3 行为分群统计", styles['heading2']))
+        story.append(Paragraph(f"3.{section_num} 行为分群统计", styles['heading2']))
         tbl = create_data_table(summary_tables['segment'], theme_colors, styles)
         if tbl:
             story.append(tbl)
         story.append(Spacer(1, 3 * mm))
+        section_num += 1
 
-    if 'province' in summary_tables:
-        story.append(Paragraph("3.4 省份分布统计 TOP10", styles['heading2']))
-        tbl = create_data_table(summary_tables['province'], theme_colors, styles)
+    if 'preference' in summary_tables:
+        from user_preferences import PREFERENCE_TYPES
+        pref_tables = summary_tables['preference']
+        for pref_type, pref_label in PREFERENCE_TYPES.items():
+            if pref_type in pref_tables:
+                story.append(Paragraph(f"3.{section_num} {pref_label}统计 TOP8", styles['heading2']))
+                tbl = create_data_table(pref_tables[pref_type], theme_colors, styles)
+                if tbl:
+                    story.append(tbl)
+                story.append(Spacer(1, 3 * mm))
+                section_num += 1
+
+    if 'generation' in summary_tables:
+        story.append(Paragraph(f"3.{section_num} 代际分布统计", styles['heading2']))
+        tbl = create_data_table(summary_tables['generation'], theme_colors, styles)
         if tbl:
             story.append(tbl)
 
@@ -788,7 +847,7 @@ def generate_pdf_report(
         styles['subtitle']
     ))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=draw_page_bg, onLaterPages=draw_page_bg)
     pdf_data = buffer.getvalue()
     buffer.close()
 

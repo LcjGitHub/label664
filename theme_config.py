@@ -15,7 +15,8 @@ LIGHT_THEME = {
         'accent_orange': '#F39C12',
         'accent_gray': '#95A5A6',
         'border': '#e0e0e0',
-        'grid': '#cccccc'
+        'grid': '#cccccc',
+        'table_alt_bg': '#f7f9fc'
     },
     'chart': {
         'figure_facecolor': 'white',
@@ -69,7 +70,8 @@ DARK_THEME = {
         'accent_orange': '#f5b041',
         'accent_gray': '#85929e',
         'border': '#2a2a4a',
-        'grid': '#3a3a5a'
+        'grid': '#3a3a5a',
+        'table_alt_bg': '#1a2744'
     },
     'chart': {
         'figure_facecolor': '#16213e',
