@@ -4,6 +4,39 @@ from datetime import datetime
 from io import BytesIO, StringIO
 
 
+COLUMN_NAME_MAP = {
+    'user_id': '用户ID',
+    'gender': '性别',
+    'age': '年龄',
+    'age_group': '年龄段',
+    'province': '省份',
+    'city': '城市',
+    'region_type': '地域类型',
+    'user_segment': '用户群体',
+    'login_frequency': '登录频率(次)',
+    'online_hours': '在线时长(小时)',
+    'purchase_count': '购买次数',
+    'total_spent': '消费金额(元)',
+    'last_active_days': '距上次活跃天数',
+    'page_views': '页面浏览量',
+    'click_count': '点击次数',
+    'login_score': '登录得分',
+    'online_score': '在线得分',
+    'purchase_score': '购买得分',
+    'spent_score': '消费得分',
+    'activity_score': '活跃得分',
+    'behavior_score': '行为综合得分'
+}
+
+
+def map_columns_to_chinese(df):
+    rename_dict = {}
+    for col in df.columns:
+        if col in COLUMN_NAME_MAP:
+            rename_dict[col] = COLUMN_NAME_MAP[col]
+    return df.rename(columns=rename_dict)
+
+
 def generate_export_filename(export_format, prefix="user_profile_data"):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"{prefix}_{timestamp}.{export_format}"
@@ -55,16 +88,18 @@ def get_data_statistics(df):
 
 
 def export_to_csv(df):
+    df_cn = map_columns_to_chinese(df)
     csv_buffer = StringIO()
-    df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
+    df_cn.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
     csv_data = csv_buffer.getvalue().encode('utf-8-sig')
     return csv_data
 
 
 def export_to_excel(df):
+    df_cn = map_columns_to_chinese(df)
     excel_buffer = BytesIO()
     with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='用户画像数据')
+        df_cn.to_excel(writer, index=False, sheet_name='用户画像数据')
 
         if 'user_segment' in df.columns:
             agg_dict = {}

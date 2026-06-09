@@ -468,6 +468,9 @@ def create_segment_comparison_chart(df):
 
 
 def main():
+    if 'export_result' not in st.session_state:
+        st.session_state.export_result = None
+
     st.title("👥 用户画像分析")
     st.markdown("---")
     
@@ -582,69 +585,114 @@ def main():
                 mime_type = get_export_mime_type(export_format_ext)
                 stats = get_data_statistics(export_df)
                 file_size_kb = round(len(exported_data) / 1024, 2)
-
-                st.success("✅ 数据导出成功！")
                 
-                export_container = st.container()
-                with export_container:
-                    st.markdown("### 📦 导出文件信息")
-                    st.markdown("---")
-                    
-                    st.download_button(
-                        label=f"⬇️ 下载 {filename}",
-                        data=exported_data,
-                        file_name=filename,
-                        mime=mime_type,
-                        use_container_width=True,
-                        key="download_export_button"
-                    )
-                    
-                    st.markdown("#### 📊 导出数据统计")
-                    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
-                    with stat_col1:
-                        st.metric("记录数", f"{stats['total_records']:,}")
-                    with stat_col2:
-                        st.metric("字段数", f"{stats['total_columns']}")
-                    with stat_col3:
-                        st.metric("文件大小", f"{file_size_kb} KB")
-                    with stat_col4:
-                        st.metric("导出格式", export_format)
-                    
-                    st.markdown("---")
-                    detail_col1, detail_col2 = st.columns(2)
-                    
-                    with detail_col1:
-                        st.markdown("##### 🎯 用户群体分布")
-                        if stats['segment_distribution']:
-                            for seg, cnt in stats['segment_distribution'].items():
-                                pct = round(cnt / stats['total_records'] * 100, 1)
-                                st.markdown(f"- **{seg}**: {cnt:,} 人 ({pct}%)")
-                        else:
-                            st.markdown("- 无分群数据")
-                    
-                    with detail_col2:
-                        st.markdown("##### 📈 关键指标")
-                        if stats['age_range']:
-                            st.markdown(f"- **年龄范围**: {stats['age_range']['min']} - {stats['age_range']['max']} 岁 (平均: {stats['age_range']['mean']}岁)")
-                        if stats['province_count']:
-                            st.markdown(f"- **覆盖省份**: {stats['province_count']} 个")
-                        if stats['total_revenue']:
-                            st.markdown(f"- **总消费金额**: ¥{stats['total_revenue']:,.2f}")
-                        if stats['avg_behavior_score']:
-                            st.markdown(f"- **平均行为得分**: {stats['avg_behavior_score']}")
-                        
-                        st.markdown("##### 👥 性别分布")
-                        if stats['gender_distribution']:
-                            for gender, cnt in stats['gender_distribution'].items():
-                                pct = round(cnt / stats['total_records'] * 100, 1)
-                                st.markdown(f"- **{gender}**: {cnt:,} 人 ({pct}%)")
-                    
+                filter_summary = {
+                    'n_samples': n_samples,
+                    'selected_province': selected_province,
+                    'selected_segment': selected_segment,
+                    'min_login_freq': min_login_freq,
+                    'min_purchase': min_purchase,
+                    'min_online_hours': min_online_hours
+                }
+
+                st.session_state.export_result = {
+                    'exported_data': exported_data,
+                    'filename': filename,
+                    'mime_type': mime_type,
+                    'stats': stats,
+                    'file_size_kb': file_size_kb,
+                    'export_format': export_format,
+                    'filter_summary': filter_summary,
+                    'success': True
+                }
+
+            except Exception as e:
+                st.session_state.export_result = {
+                    'success': False,
+                    'error': str(e),
+                    'export_format': export_format
+                }
+    
+    if st.session_state.export_result is not None:
+        result = st.session_state.export_result
+        if not result.get('success', False):
+            st.error(f"❌ 导出失败: {result.get('error', '未知错误')}")
+            if result.get('export_format') == 'Excel' and 'openpyxl' in result.get('error', '').lower():
+                st.info("💡 提示: Excel 导出需要安装 openpyxl 库，请运行 `pip install openpyxl` 安装后重试。")
+        else:
+            st.success("✅ 数据导出成功！")
+            
+            export_container = st.container()
+            with export_container:
+                st.markdown("### 📦 导出文件信息")
                 st.markdown("---")
                 
-            except Exception as e:
-                st.error(f"❌ 导出失败: {str(e)}")
-                if export_format == 'Excel' and 'openpyxl' in str(e).lower():
-                    st.info("💡 提示: Excel 导出需要安装 openpyxl 库，请运行 `pip install openpyxl` 安装后重试。")
+                download_key = f"download_{result['filename']}_{hash(result['filename'])}"
+                st.download_button(
+                    label=f"⬇️ 下载 {result['filename']}",
+                    data=result['exported_data'],
+                    file_name=result['filename'],
+                    mime=result['mime_type'],
+                    use_container_width=True,
+                    key=download_key
+                )
+                
+                st.markdown("#### 🔍 导出时筛选条件")
+                fs = result['filter_summary']
+                filter_col1, filter_col2, filter_col3 = st.columns(3)
+                with filter_col1:
+                    st.markdown(f"- **样本数量**: {fs['n_samples']:,}")
+                    st.markdown(f"- **选择省份**: {fs['selected_province']}")
+                with filter_col2:
+                    segment_text = '、'.join(fs['selected_segment']) if fs['selected_segment'] else '全部'
+                    st.markdown(f"- **行为群体**: {segment_text}")
+                    st.markdown(f"- **最低登录频率**: {fs['min_login_freq']} 次")
+                with filter_col3:
+                    st.markdown(f"- **最低购买次数**: {fs['min_purchase']} 次")
+                    st.markdown(f"- **最低在线时长**: {fs['min_online_hours']:.1f} 小时")
+                
+                st.markdown("---")
+                st.markdown("#### 📊 导出数据统计")
+                stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+                with stat_col1:
+                    st.metric("记录数", f"{result['stats']['total_records']:,}")
+                with stat_col2:
+                    st.metric("字段数", f"{result['stats']['total_columns']}")
+                with stat_col3:
+                    st.metric("文件大小", f"{result['file_size_kb']} KB")
+                with stat_col4:
+                    st.metric("导出格式", result['export_format'])
+                
+                st.markdown("---")
+                detail_col1, detail_col2 = st.columns(2)
+                
+                with detail_col1:
+                    st.markdown("##### 🎯 用户群体分布")
+                    if result['stats']['segment_distribution']:
+                        for seg, cnt in result['stats']['segment_distribution'].items():
+                            pct = round(cnt / result['stats']['total_records'] * 100, 1)
+                            st.markdown(f"- **{seg}**: {cnt:,} 人 ({pct}%)")
+                    else:
+                        st.markdown("- 无分群数据")
+                
+                with detail_col2:
+                    st.markdown("##### 📈 关键指标")
+                    if result['stats']['age_range']:
+                        st.markdown(f"- **年龄范围**: {result['stats']['age_range']['min']} - {result['stats']['age_range']['max']} 岁 (平均: {result['stats']['age_range']['mean']}岁)")
+                    if result['stats']['province_count']:
+                        st.markdown(f"- **覆盖省份**: {result['stats']['province_count']} 个")
+                    if result['stats']['total_revenue']:
+                        st.markdown(f"- **总消费金额**: ¥{result['stats']['total_revenue']:,.2f}")
+                    if result['stats']['avg_behavior_score']:
+                        st.markdown(f"- **平均行为得分**: {result['stats']['avg_behavior_score']}")
+                    
+                    st.markdown("##### 👥 性别分布")
+                    if result['stats']['gender_distribution']:
+                        for gender, cnt in result['stats']['gender_distribution'].items():
+                            pct = round(cnt / result['stats']['total_records'] * 100, 1)
+                            st.markdown(f"- **{gender}**: {cnt:,} 人 ({pct}%)")
+                
+            st.markdown("---")
     
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
