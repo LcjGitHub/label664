@@ -1156,7 +1156,7 @@ def create_gender_preference_chart(df_with_gender, pref_type, top_n=8, theme=Non
     return fig
 
 
-def create_interest_trend_area_chart(trend_data, top_n=8, theme=None):
+def create_interest_trend_area_chart(trend_data, top_n=8, theme=None, start_month=None, end_month=None):
     if theme is None:
         theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
     tchart = theme['chart']
@@ -1171,7 +1171,7 @@ def create_interest_trend_area_chart(trend_data, top_n=8, theme=None):
     font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
     font_legend = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
 
-    trend_df = aggregate_trend_data(trend_data, 'interest')
+    trend_df = aggregate_trend_data(trend_data, 'interest', start_month=start_month, end_month=end_month)
     trend_df = get_top_tags_trend(trend_df, top_n=top_n)
 
     if trend_df.empty:
@@ -1182,8 +1182,20 @@ def create_interest_trend_area_chart(trend_data, top_n=8, theme=None):
         plt.tight_layout()
         return fig
 
+    all_months = trend_data['months']
+    if start_month and start_month in all_months:
+        start_idx = all_months.index(start_month)
+    else:
+        start_idx = 0
+    if end_month and end_month in all_months:
+        end_idx = all_months.index(end_month)
+    else:
+        end_idx = len(all_months) - 1
+    selected_months = all_months[start_idx:end_idx + 1]
+
     pivot_df = trend_df.pivot(index='month', columns='tag', values='percentage').fillna(0)
-    pivot_df = pivot_df.reindex(trend_data['months']).fillna(0)
+    pivot_df = pivot_df.reindex(selected_months).fillna(0)
+    pivot_df = pivot_df.div(pivot_df.sum(axis=1), axis=0) * 100
 
     colors = sns.color_palette(tchart['palette_segment'], len(pivot_df.columns))
     if len(colors) < len(pivot_df.columns):
@@ -1225,7 +1237,7 @@ def create_interest_trend_area_chart(trend_data, top_n=8, theme=None):
     return fig
 
 
-def create_consumption_trend_line_chart(trend_data, top_n=6, theme=None):
+def create_consumption_trend_line_chart(trend_data, top_n=6, theme=None, start_month=None, end_month=None):
     if theme is None:
         theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
     tchart = theme['chart']
@@ -1241,7 +1253,7 @@ def create_consumption_trend_line_chart(trend_data, top_n=6, theme=None):
     font_legend = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
     font_text = FontProperties(fname=_fp, size=9, weight='bold') if _fp else FontProperties(family='SimHei', size=9, weight='bold')
 
-    trend_df = aggregate_trend_data(trend_data, 'consumption')
+    trend_df = aggregate_trend_data(trend_data, 'consumption', start_month=start_month, end_month=end_month)
     trend_df = get_top_tags_trend(trend_df, top_n=top_n)
 
     if trend_df.empty:
@@ -1252,8 +1264,19 @@ def create_consumption_trend_line_chart(trend_data, top_n=6, theme=None):
         plt.tight_layout()
         return fig
 
+    all_months = trend_data['months']
+    if start_month and start_month in all_months:
+        start_idx = all_months.index(start_month)
+    else:
+        start_idx = 0
+    if end_month and end_month in all_months:
+        end_idx = all_months.index(end_month)
+    else:
+        end_idx = len(all_months) - 1
+    selected_months = all_months[start_idx:end_idx + 1]
+
     pivot_df = trend_df.pivot(index='month', columns='tag', values='percentage').fillna(0)
-    pivot_df = pivot_df.reindex(trend_data['months']).fillna(0)
+    pivot_df = pivot_df.reindex(selected_months).fillna(0)
 
     colors = sns.color_palette(tchart['palette_segment'], len(pivot_df.columns))
     if len(colors) < len(pivot_df.columns):
@@ -1309,7 +1332,7 @@ def create_consumption_trend_line_chart(trend_data, top_n=6, theme=None):
     return fig
 
 
-def create_channel_trend_stacked_bar_chart(trend_data, top_n=6, theme=None):
+def create_channel_trend_stacked_bar_chart(trend_data, top_n=6, theme=None, start_month=None, end_month=None):
     if theme is None:
         theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
     tchart = theme['chart']
@@ -1325,7 +1348,7 @@ def create_channel_trend_stacked_bar_chart(trend_data, top_n=6, theme=None):
     font_legend = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
     font_text = FontProperties(fname=_fp, size=9, weight='bold') if _fp else FontProperties(family='SimHei', size=9, weight='bold')
 
-    trend_df = aggregate_trend_data(trend_data, 'channel')
+    trend_df = aggregate_trend_data(trend_data, 'channel', start_month=start_month, end_month=end_month)
     trend_df = get_top_tags_trend(trend_df, top_n=top_n)
 
     if trend_df.empty:
@@ -1336,8 +1359,20 @@ def create_channel_trend_stacked_bar_chart(trend_data, top_n=6, theme=None):
         plt.tight_layout()
         return fig
 
+    all_months = trend_data['months']
+    if start_month and start_month in all_months:
+        start_idx = all_months.index(start_month)
+    else:
+        start_idx = 0
+    if end_month and end_month in all_months:
+        end_idx = all_months.index(end_month)
+    else:
+        end_idx = len(all_months) - 1
+    selected_months = all_months[start_idx:end_idx + 1]
+
     pivot_df = trend_df.pivot(index='month', columns='tag', values='percentage').fillna(0)
-    pivot_df = pivot_df.reindex(trend_data['months']).fillna(0)
+    pivot_df = pivot_df.reindex(selected_months).fillna(0)
+    pivot_df = pivot_df.div(pivot_df.sum(axis=1), axis=0) * 100
 
     colors = sns.color_palette(tchart['palette_segment'], len(pivot_df.columns))
     if len(colors) < len(pivot_df.columns):
@@ -1435,7 +1470,7 @@ def create_period_comparison_chart(comparison_df, pref_type_label, period1_label
         text.set_color(tchart['text_color'])
 
     for i, (val1, val2, diff) in enumerate(zip(display_df['period1_pct'].values, display_df['period2_pct'].values, display_df['diff_pct'].values)):
-        diff_color = tc['accent_green'] if diff > 0 else tc['accent_red'] if diff < 0 else tchart['text_color']
+        diff_color = tchart['accent_green'] if diff > 0 else tchart['accent_red'] if diff < 0 else tchart['text_color']
         sign = '+' if diff > 0 else ''
         ax.text(max(val1, val2) + 0.3, i,
                 f'{sign}{diff:.1f}%',
@@ -1785,6 +1820,11 @@ def main():
     df_filtered = df_filtered[df_filtered['online_hours'] >= min_online_hours]
     
     df_full = df
+
+    filtered_user_ids = df_filtered['user_id'].unique().tolist()
+    if len(filtered_user_ids) > 0:
+        df_trend = generate_preference_trend_data(filtered_user_ids)
+    available_months = df_trend['months']
 
     if export_clicked:
         if len(df_filtered) == 0:
@@ -2758,7 +2798,7 @@ def main():
 
     with trend_tab1:
         st.markdown(f"### 兴趣标签热度变化（堆叠面积图） - {trend_start_month} 至 {trend_end_month}")
-        interest_trend_fig = create_interest_trend_area_chart(df_trend, top_n=trend_top_n)
+        interest_trend_fig = create_interest_trend_area_chart(df_trend, top_n=trend_top_n, start_month=trend_start_month, end_month=trend_end_month)
         st.pyplot(interest_trend_fig, use_container_width=True)
 
         interest_detail_col1, interest_detail_col2 = st.columns(2)
@@ -2804,7 +2844,7 @@ def main():
 
     with trend_tab2:
         st.markdown(f"### 消费偏好月度变化（折线图） - {trend_start_month} 至 {trend_end_month}")
-        consumption_trend_fig = create_consumption_trend_line_chart(df_trend, top_n=min(trend_top_n, 8))
+        consumption_trend_fig = create_consumption_trend_line_chart(df_trend, top_n=min(trend_top_n, 8), start_month=trend_start_month, end_month=trend_end_month)
         st.pyplot(consumption_trend_fig, use_container_width=True)
 
         consumption_detail_col1, consumption_detail_col2 = st.columns(2)
@@ -2850,7 +2890,7 @@ def main():
 
     with trend_tab3:
         st.markdown(f"### 渠道偏好占比演变（堆叠柱状图） - {trend_start_month} 至 {trend_end_month}")
-        channel_trend_fig = create_channel_trend_stacked_bar_chart(df_trend, top_n=min(trend_top_n, 8))
+        channel_trend_fig = create_channel_trend_stacked_bar_chart(df_trend, top_n=min(trend_top_n, 8), start_month=trend_start_month, end_month=trend_end_month)
         st.pyplot(channel_trend_fig, use_container_width=True)
 
         channel_detail_col1, channel_detail_col2 = st.columns(2)
