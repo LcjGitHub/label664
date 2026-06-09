@@ -222,3 +222,143 @@ def get_preference_summary(df):
         'top_channel': channel_ranking,
         'concentration': concentration
     }
+
+
+def get_past_12_months():
+    from datetime import datetime
+    current_date = datetime(2026, 6, 1)
+    months = []
+    for i in range(11, -1, -1):
+        month_date = current_date - pd.DateOffset(months=i)
+        months.append(month_date.strftime('%Y-%m'))
+    return months
+
+
+@st.cache_data
+def generate_preference_trend_data(user_ids, seed=42):
+    np.random.seed(seed)
+    n_users = len(user_ids)
+    months = get_past_12_months()
+
+    def generate_monthly_trend(tags, base_month_idx=5):
+        n_tags = len(tags)
+        monthly_data = []
+
+        base_weights = np.random.dirichlet(np.ones(n_tags) * 1.5, size=1)[0]
+        base_weights = (base_weights * 100).round(1)
+
+        for month_idx in range(len(months)):
+            trend_factor = 1 + (month_idx - base_month_idx) * 0.02
+            noise = np.random.normal(0, 0.08, n_tags)
+
+            seasonal = np.sin((month_idx / 12) * 2 * np.pi + np.random.uniform(0, 2 * np.pi)) * 0.1
+
+            month_weights = base_weights * trend_factor * (1 + noise) * (1 + seasonal)
+            month_weights = np.clip(month_weights, 0.1, None)
+            month_weights = (month_weights / month_weights.sum() * 100).round(1)
+
+            monthly_data.append(dict(zip(tags, month_weights)))
+
+        return monthly_data
+
+    interest_monthly = {}
+    consumption_monthly = {}
+    channel_monthly = {}
+
+    for uid in user_ids:
+        user_seed = seed + uid
+        np.random.seed(user_seed)
+
+        n_interest = np.random.randint(4, 10)
+        selected_interest = np.random.choice(INTEREST_TAGS, size=n_interest, replace=False)
+        interest_monthly[uid] = generate_monthly_trend(selected_interest)
+
+        n_consumption = np.random.randint(3, 7)
+        selected_consumption = np.random.choice(CONSUMPTION_PREFERENCES, size=n_consumption, replace=False)
+        consumption_monthly[uid] = generate_monthly_trend(selected_consumption)
+
+        n_channel = np.random.randint(3, 8)
+        selected_channel = np.random.choice(CHANNEL_PREFERENCES, size=n_channel, replace=False)
+        channel_monthly[uid] = generate_monthly_trend(selected_channel)
+
+    return {
+        'months': months,
+        'interest_monthly': interest_monthly,
+        'consumption_monthly': consumption_monthly,
+        'channel_monthly': channel_monthly
+    }
+
+
+def aggregate_trend_data(trend_data, pref_type, user_ids=None, start_month=None, end_month=None):
+    months = trend_data['months']
+    monthly_key = f'{pref_type}_monthly'
+    user_monthly = trend_data[monthly_key]
+
+    if user_ids is None:
+        user_ids = list(user_monthly.keys())
+
+    if start_month is None:
+        start_idx = 0
+    else:
+        start_idx = months.index(start_month) if start_month in months else 0
+
+    if end_month is None:
+        end_idx = len(months) - 1
+    else:
+        end_idx = months.index(end_month) if end_month in months else len(months) - 1
+
+    selected_months = months[start_idx:end_idx + 1]
+
+    monthly_aggregated = {}
+    for month in selected_months:
+        monthly_aggregated[month] = {}
+
+    for uid in user_ids:
+        if uid not in user_monthly:
+            continue
+        user_data = user_monthly[uid]
+        for i, month in enumerate(selected_months):
+            month_data = user_data[start_idx + i] if start_idx + i < len(user_data) else {}
+            for tag, weight in month_data.items():
+                if tag in monthly_aggregated[month]:
+                    monthly_aggregated[month][tag] += weight
+                else:
+                    monthly_aggregated[month][tag] = weight
+
+    result = []
+    for month in selected_months:
+        month_prefs = monthly_aggregated[month]
+        total = sum(month_prefs.values()) or 1
+        for tag, weight in month_prefs.items():
+            result.append({
+                'month': month,
+                'tag': tag,
+                'weight': round(weight, 1),
+                'percentage': round(weight / total * 100, 1)
+            })
+
+    return pd.DataFrame(result)
+
+
+def get_top_tags_trend(trend_df, top_n=8):
+    tag_totals = trend_df.groupby('tag')['weight'].sum().sort_values(ascending=False)
+    top_tags = tag_totals.head(top_n).index.tolist()
+    return trend_df[trend_df['tag'].isin(top_tags)]
+
+
+def compare_periods(trend_data, pref_type, period1_start, period1_end, period2_start, period2_end):
+    df1 = aggregate_trend_data(trend_data, pref_type, start_month=period1_start, end_month=period1_end)
+    df2 = aggregate_trend_data(trend_data, pref_type, start_month=period2_start, end_month=period2_end)
+
+    agg1 = df1.groupby('tag')['percentage'].mean().reset_index()
+    agg1.columns = ['tag', 'period1_pct']
+
+    agg2 = df2.groupby('tag')['percentage'].mean().reset_index()
+    agg2.columns = ['tag', 'period2_pct']
+
+    comparison = pd.merge(agg1, agg2, on='tag', how='outer').fillna(0)
+    comparison['diff_pct'] = (comparison['period2_pct'] - comparison['period1_pct']).round(1)
+    comparison['change_rate'] = ((comparison['period2_pct'] - comparison['period1_pct']) / comparison['period1_pct'].replace(0, np.nan) * 100).round(1)
+    comparison = comparison.sort_values('diff_pct', key=abs, ascending=False)
+
+    return comparison

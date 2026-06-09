@@ -67,7 +67,12 @@ from user_preferences import (
     get_gender_preference_comparison,
     get_preference_wordcloud_data,
     PREFERENCE_TYPES,
-    TAG_CATEGORIES
+    TAG_CATEGORIES,
+    generate_preference_trend_data,
+    aggregate_trend_data,
+    get_top_tags_trend,
+    compare_periods,
+    get_past_12_months
 )
 from utils import (
     export_data,
@@ -1151,6 +1156,306 @@ def create_gender_preference_chart(df_with_gender, pref_type, top_n=8, theme=Non
     return fig
 
 
+def create_interest_trend_area_chart(trend_data, top_n=8, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    _fp = get_available_chinese_font()
+    font_prop = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(fname=_fp, size=16, weight='bold') if _fp else FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
+    font_legend = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+
+    trend_df = aggregate_trend_data(trend_data, 'interest')
+    trend_df = get_top_tags_trend(trend_df, top_n=top_n)
+
+    if trend_df.empty:
+        ax.text(0.5, 0.5, '暂无数据', fontproperties=font_prop,
+                ha='center', va='center', transform=ax.transAxes, color=tchart['text_color'])
+        ax.axis('off')
+        ax.set_title('兴趣标签热度变化趋势', fontproperties=font_title, pad=20, color=tchart['text_color'])
+        plt.tight_layout()
+        return fig
+
+    pivot_df = trend_df.pivot(index='month', columns='tag', values='percentage').fillna(0)
+    pivot_df = pivot_df.reindex(trend_data['months']).fillna(0)
+
+    colors = sns.color_palette(tchart['palette_segment'], len(pivot_df.columns))
+    if len(colors) < len(pivot_df.columns):
+        colors = sns.color_palette(tchart['palette_province'], len(pivot_df.columns))
+
+    ax.stackplot(
+        range(len(pivot_df.index)),
+        [pivot_df[col].values for col in pivot_df.columns],
+        labels=pivot_df.columns.tolist(),
+        colors=colors,
+        alpha=0.85,
+        edgecolor=tchart['axes_facecolor'],
+        linewidth=0.5
+    )
+
+    ax.set_xlabel('月份', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('偏好占比 (%)', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title(f'兴趣标签热度变化趋势（Top {top_n}）', fontproperties=font_title, pad=20, color=tchart['text_color'])
+    ax.set_xticks(range(len(pivot_df.index)))
+    ax.set_xticklabels(pivot_df.index.tolist(), fontproperties=font_prop, rotation=30, ha='right')
+
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True, loc='upper left', bbox_to_anchor=(1, 1), ncol=1)
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
+def create_consumption_trend_line_chart(trend_data, top_n=6, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    _fp = get_available_chinese_font()
+    font_prop = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(fname=_fp, size=16, weight='bold') if _fp else FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
+    font_legend = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+    font_text = FontProperties(fname=_fp, size=9, weight='bold') if _fp else FontProperties(family='SimHei', size=9, weight='bold')
+
+    trend_df = aggregate_trend_data(trend_data, 'consumption')
+    trend_df = get_top_tags_trend(trend_df, top_n=top_n)
+
+    if trend_df.empty:
+        ax.text(0.5, 0.5, '暂无数据', fontproperties=font_prop,
+                ha='center', va='center', transform=ax.transAxes, color=tchart['text_color'])
+        ax.axis('off')
+        ax.set_title('消费偏好月度变化趋势', fontproperties=font_title, pad=20, color=tchart['text_color'])
+        plt.tight_layout()
+        return fig
+
+    pivot_df = trend_df.pivot(index='month', columns='tag', values='percentage').fillna(0)
+    pivot_df = pivot_df.reindex(trend_data['months']).fillna(0)
+
+    colors = sns.color_palette(tchart['palette_segment'], len(pivot_df.columns))
+    if len(colors) < len(pivot_df.columns):
+        colors = sns.color_palette(tchart['palette_province'], len(pivot_df.columns))
+
+    markers = ['o', 's', '^', 'D', 'v', 'p', '*', 'h', '8', 'X']
+
+    for i, col in enumerate(pivot_df.columns):
+        ax.plot(
+            range(len(pivot_df.index)),
+            pivot_df[col].values,
+            label=col,
+            color=colors[i],
+            marker=markers[i % len(markers)],
+            markersize=8,
+            linewidth=2.5,
+            alpha=0.9
+        )
+        last_idx = len(pivot_df) - 1
+        ax.annotate(
+            f'{pivot_df[col].iloc[-1]:.1f}%',
+            xy=(last_idx, pivot_df[col].iloc[-1]),
+            xytext=(8, 0),
+            textcoords='offset points',
+            fontproperties=font_text,
+            color=colors[i]
+        )
+
+    ax.set_xlabel('月份', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('偏好占比 (%)', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title(f'消费偏好月度变化趋势（Top {top_n}）', fontproperties=font_title, pad=20, color=tchart['text_color'])
+    ax.set_xticks(range(len(pivot_df.index)))
+    ax.set_xticklabels(pivot_df.index.tolist(), fontproperties=font_prop, rotation=30, ha='right')
+
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True, loc='upper left', bbox_to_anchor=(1, 1), ncol=1)
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+    ax.xaxis.grid(True, alpha=0.2, linestyle='--', color=tchart['grid_color'])
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
+def create_channel_trend_stacked_bar_chart(trend_data, top_n=6, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    _fp = get_available_chinese_font()
+    font_prop = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(fname=_fp, size=16, weight='bold') if _fp else FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
+    font_legend = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+    font_text = FontProperties(fname=_fp, size=9, weight='bold') if _fp else FontProperties(family='SimHei', size=9, weight='bold')
+
+    trend_df = aggregate_trend_data(trend_data, 'channel')
+    trend_df = get_top_tags_trend(trend_df, top_n=top_n)
+
+    if trend_df.empty:
+        ax.text(0.5, 0.5, '暂无数据', fontproperties=font_prop,
+                ha='center', va='center', transform=ax.transAxes, color=tchart['text_color'])
+        ax.axis('off')
+        ax.set_title('渠道偏好占比演变趋势', fontproperties=font_title, pad=20, color=tchart['text_color'])
+        plt.tight_layout()
+        return fig
+
+    pivot_df = trend_df.pivot(index='month', columns='tag', values='percentage').fillna(0)
+    pivot_df = pivot_df.reindex(trend_data['months']).fillna(0)
+
+    colors = sns.color_palette(tchart['palette_segment'], len(pivot_df.columns))
+    if len(colors) < len(pivot_df.columns):
+        colors = sns.color_palette(tchart['palette_province'], len(pivot_df.columns))
+
+    x = np.arange(len(pivot_df.index))
+    bottom = np.zeros(len(pivot_df.index))
+
+    for i, col in enumerate(pivot_df.columns):
+        values = pivot_df[col].values
+        bars = ax.bar(
+            x,
+            values,
+            bottom=bottom,
+            label=col,
+            color=colors[i],
+            edgecolor=tchart['axes_facecolor'],
+            linewidth=1
+        )
+        bottom += values
+
+        for j, bar in enumerate(bars):
+            height = bar.get_height()
+            if height > 2:
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_y() + height / 2,
+                    f'{height:.1f}%',
+                    ha='center',
+                    va='center',
+                    fontproperties=font_text,
+                    color='white'
+                )
+
+    ax.set_xlabel('月份', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('偏好占比 (%)', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title(f'渠道偏好占比演变趋势（Top {top_n}）', fontproperties=font_title, pad=20, color=tchart['text_color'])
+    ax.set_xticks(x)
+    ax.set_xticklabels(pivot_df.index.tolist(), fontproperties=font_prop, rotation=30, ha='right')
+
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True, loc='upper left', bbox_to_anchor=(1, 1), ncol=1)
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
+def create_period_comparison_chart(comparison_df, pref_type_label, period1_label, period2_label, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    _fp = get_available_chinese_font()
+    font_prop = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(fname=_fp, size=16, weight='bold') if _fp else FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(fname=_fp, size=10, weight='bold') if _fp else FontProperties(family='SimHei', size=10, weight='bold')
+    font_legend = FontProperties(fname=_fp, size=11) if _fp else FontProperties(family='SimHei', size=11)
+
+    display_df = comparison_df.head(15)
+
+    y = np.arange(len(display_df))
+    width = 0.35
+
+    ax.barh(y - width/2, display_df['period1_pct'].values, width,
+            label=period1_label, color=tchart['palette_bar'][0], edgecolor=tchart['axes_facecolor'], linewidth=1.5)
+    ax.barh(y + width/2, display_df['period2_pct'].values, width,
+            label=period2_label, color=tchart['palette_bar'][1], edgecolor=tchart['axes_facecolor'], linewidth=1.5)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(display_df['tag'].values, fontproperties=font_prop)
+    ax.set_xlabel('平均偏好占比 (%)', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title(f'{pref_type_label} 时间段对比（变化幅度前15名）', fontproperties=font_title, pad=20, color=tchart['text_color'])
+
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True)
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
+    for i, (val1, val2, diff) in enumerate(zip(display_df['period1_pct'].values, display_df['period2_pct'].values, display_df['diff_pct'].values)):
+        diff_color = tc['accent_green'] if diff > 0 else tc['accent_red'] if diff < 0 else tchart['text_color']
+        sign = '+' if diff > 0 else ''
+        ax.text(max(val1, val2) + 0.3, i,
+                f'{sign}{diff:.1f}%',
+                va='center', fontproperties=font_text, color=diff_color)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.xaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
 def main():
     if 'export_result' not in st.session_state:
         st.session_state.export_result = None
@@ -1209,6 +1514,8 @@ def main():
     df_behavior = generate_behavior_data(df_profile['user_id'].tolist())
     df_behavior = calculate_behavior_scores(df_behavior)
     df_preferences = generate_preference_data(df_profile['user_id'].tolist())
+    df_trend = generate_preference_trend_data(df_profile['user_id'].tolist())
+    available_months = df_trend['months']
 
     if st.session_state.last_n_samples is not None and st.session_state.last_n_samples != n_samples:
         st.session_state.segment_thresholds = {
@@ -2347,6 +2654,335 @@ def main():
             display_top5 = top5[['排名', '标签', '占比']].copy()
             display_top5['占比'] = display_top5['占比'].astype(str) + '%'
             st.dataframe(display_top5, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    st.subheader("📈 时间趋势分析")
+    st.markdown("#### 过去12个月用户偏好变化趋势分析")
+
+    trend_col1, trend_col2 = st.columns([1, 1])
+
+    with trend_col1:
+        st.markdown("##### 🕐 时间段选择")
+        trend_start_month = st.selectbox(
+            "起始月份",
+            options=available_months,
+            index=0,
+            help="选择趋势分析的起始月份",
+            key="trend_start_month"
+        )
+        trend_end_month = st.selectbox(
+            "结束月份",
+            options=available_months,
+            index=len(available_months) - 1,
+            help="选择趋势分析的结束月份",
+            key="trend_end_month"
+        )
+
+        if available_months.index(trend_start_month) > available_months.index(trend_end_month):
+            st.warning("⚠️ 起始月份应早于或等于结束月份")
+
+        trend_top_n = st.slider(
+            "显示标签数量",
+            min_value=4,
+            max_value=12,
+            value=8,
+            step=1,
+            help="趋势图表中显示的热门标签数量",
+            key="trend_top_n"
+        )
+
+    with trend_col2:
+        st.markdown("##### 🔍 时间段对比")
+        enable_compare = st.checkbox(
+            "启用时间段对比",
+            value=False,
+            help="启用后可以对比两个不同时间段的偏好差异"
+        )
+
+        if enable_compare:
+            compare_pref_type = st.selectbox(
+                "选择对比偏好类型",
+                options=pref_type_options,
+                format_func=lambda x: PREFERENCE_TYPES[x],
+                index=0,
+                key="compare_pref_type"
+            )
+
+            st.markdown("**对比时间段 A:**")
+            period1_start = st.selectbox(
+                "A 起始月份",
+                options=available_months,
+                index=0,
+                key="period1_start"
+            )
+            period1_end = st.selectbox(
+                "A 结束月份",
+                options=available_months,
+                index=len(available_months) // 2,
+                key="period1_end"
+            )
+
+            st.markdown("**对比时间段 B:**")
+            period2_start = st.selectbox(
+                "B 起始月份",
+                options=available_months,
+                index=len(available_months) // 2 + 1 if len(available_months) // 2 + 1 < len(available_months) else len(available_months) - 1,
+                key="period2_start"
+            )
+            period2_end = st.selectbox(
+                "B 结束月份",
+                options=available_months,
+                index=len(available_months) - 1,
+                key="period2_end"
+            )
+
+    trend_start_idx = available_months.index(trend_start_month)
+    trend_end_idx = available_months.index(trend_end_month)
+    selected_months = available_months[trend_start_idx:trend_end_idx + 1]
+
+    trend_info_col1, trend_info_col2, trend_info_col3 = st.columns(3)
+    with trend_info_col1:
+        st.info(f"📊 当前分析时间段: {trend_start_month} 至 {trend_end_month}\n\n共 {len(selected_months)} 个月")
+    with trend_info_col2:
+        st.metric("数据覆盖月份", f"{len(selected_months)} 个月")
+    with trend_info_col3:
+        if enable_compare:
+            st.success(f"🔍 已启用对比模式\n\n对比 {PREFERENCE_TYPES[compare_pref_type]}")
+        else:
+            st.info("💡 勾选左侧 '启用时间段对比' 可对比不同时间段偏好差异")
+
+    st.markdown("---")
+
+    trend_tab1, trend_tab2, trend_tab3 = st.tabs(["🔥 兴趣标签热度趋势", "💰 消费偏好变化趋势", "📱 渠道偏好演变趋势"])
+
+    with trend_tab1:
+        st.markdown(f"### 兴趣标签热度变化（堆叠面积图） - {trend_start_month} 至 {trend_end_month}")
+        interest_trend_fig = create_interest_trend_area_chart(df_trend, top_n=trend_top_n)
+        st.pyplot(interest_trend_fig, use_container_width=True)
+
+        interest_detail_col1, interest_detail_col2 = st.columns(2)
+        with interest_detail_col1:
+            st.markdown("#### 📋 兴趣标签月度明细")
+            interest_trend_detail = aggregate_trend_data(df_trend, 'interest', start_month=trend_start_month, end_month=trend_end_month)
+            interest_trend_detail = get_top_tags_trend(interest_trend_detail, top_n=trend_top_n)
+            interest_pivot = interest_trend_detail.pivot(index='tag', columns='month', values='percentage').fillna(0).round(1)
+            interest_pivot = interest_pivot[selected_months]
+            interest_pivot.insert(0, '平均占比(%)', interest_pivot.mean(axis=1).round(1))
+            interest_pivot = interest_pivot.sort_values('平均占比(%)', ascending=False)
+            interest_pivot.insert(0, '排名', range(1, len(interest_pivot) + 1))
+            st.dataframe(interest_pivot, use_container_width=True)
+
+        with interest_detail_col2:
+            st.markdown("#### 📈 增长最快的兴趣标签")
+            if len(selected_months) >= 2:
+                interest_growth = []
+                interest_trend_all = aggregate_trend_data(df_trend, 'interest', start_month=trend_start_month, end_month=trend_end_month)
+                for tag in interest_trend_all['tag'].unique():
+                    tag_data = interest_trend_all[interest_trend_all['tag'] == tag].sort_values('month')
+                    if len(tag_data) >= 2:
+                        first_val = tag_data['percentage'].iloc[0]
+                        last_val = tag_data['percentage'].iloc[-1]
+                        growth = last_val - first_val
+                        growth_rate = (growth / first_val * 100) if first_val > 0 else 0
+                        interest_growth.append({
+                            '标签': tag,
+                            f'期初({selected_months[0]})': round(first_val, 1),
+                            f'期末({selected_months[-1]})': round(last_val, 1),
+                            '变化值': round(growth, 1),
+                            '变化率(%)': round(growth_rate, 1)
+                        })
+                if interest_growth:
+                    growth_df = pd.DataFrame(interest_growth)
+                    growth_df = growth_df.sort_values('变化值', ascending=False)
+                    growth_df.insert(0, '排名', range(1, len(growth_df) + 1))
+                    st.dataframe(growth_df.head(10), use_container_width=True, hide_index=True)
+                else:
+                    st.info("暂无足够数据计算增长趋势")
+            else:
+                st.info("需要选择至少2个月份来计算增长趋势")
+
+    with trend_tab2:
+        st.markdown(f"### 消费偏好月度变化（折线图） - {trend_start_month} 至 {trend_end_month}")
+        consumption_trend_fig = create_consumption_trend_line_chart(df_trend, top_n=min(trend_top_n, 8))
+        st.pyplot(consumption_trend_fig, use_container_width=True)
+
+        consumption_detail_col1, consumption_detail_col2 = st.columns(2)
+        with consumption_detail_col1:
+            st.markdown("#### 📋 消费偏好月度明细")
+            consumption_trend_detail = aggregate_trend_data(df_trend, 'consumption', start_month=trend_start_month, end_month=trend_end_month)
+            consumption_trend_detail = get_top_tags_trend(consumption_trend_detail, top_n=min(trend_top_n, 8))
+            consumption_pivot = consumption_trend_detail.pivot(index='tag', columns='month', values='percentage').fillna(0).round(1)
+            consumption_pivot = consumption_pivot[selected_months]
+            consumption_pivot.insert(0, '平均占比(%)', consumption_pivot.mean(axis=1).round(1))
+            consumption_pivot = consumption_pivot.sort_values('平均占比(%)', ascending=False)
+            consumption_pivot.insert(0, '排名', range(1, len(consumption_pivot) + 1))
+            st.dataframe(consumption_pivot, use_container_width=True)
+
+        with consumption_detail_col2:
+            st.markdown("#### 📊 消费偏好稳定性分析")
+            if len(selected_months) >= 3:
+                consumption_stability = []
+                consumption_trend_all = aggregate_trend_data(df_trend, 'consumption', start_month=trend_start_month, end_month=trend_end_month)
+                for tag in consumption_trend_all['tag'].unique():
+                    tag_data = consumption_trend_all[consumption_trend_all['tag'] == tag]['percentage'].values
+                    if len(tag_data) >= 3:
+                        mean_val = np.mean(tag_data)
+                        std_val = np.std(tag_data)
+                        cv = (std_val / mean_val * 100) if mean_val > 0 else 0
+                        consumption_stability.append({
+                            '标签': tag,
+                            '平均占比(%)': round(mean_val, 1),
+                            '标准差': round(std_val, 2),
+                            '变异系数(%)': round(cv, 1),
+                            '稳定性': '高' if cv < 10 else ('中' if cv < 20 else '低')
+                        })
+                if consumption_stability:
+                    stability_df = pd.DataFrame(consumption_stability)
+                    stability_df = stability_df.sort_values('变异系数(%)', ascending=True)
+                    stability_df.insert(0, '排名', range(1, len(stability_df) + 1))
+                    st.dataframe(stability_df.head(10), use_container_width=True, hide_index=True)
+                    st.caption("💡 变异系数越小表示偏好越稳定")
+                else:
+                    st.info("暂无足够数据分析稳定性")
+            else:
+                st.info("需要选择至少3个月份来分析偏好稳定性")
+
+    with trend_tab3:
+        st.markdown(f"### 渠道偏好占比演变（堆叠柱状图） - {trend_start_month} 至 {trend_end_month}")
+        channel_trend_fig = create_channel_trend_stacked_bar_chart(df_trend, top_n=min(trend_top_n, 8))
+        st.pyplot(channel_trend_fig, use_container_width=True)
+
+        channel_detail_col1, channel_detail_col2 = st.columns(2)
+        with channel_detail_col1:
+            st.markdown("#### 📋 渠道偏好月度明细")
+            channel_trend_detail = aggregate_trend_data(df_trend, 'channel', start_month=trend_start_month, end_month=trend_end_month)
+            channel_trend_detail = get_top_tags_trend(channel_trend_detail, top_n=min(trend_top_n, 8))
+            channel_pivot = channel_trend_detail.pivot(index='tag', columns='month', values='percentage').fillna(0).round(1)
+            channel_pivot = channel_pivot[selected_months]
+            channel_pivot.insert(0, '平均占比(%)', channel_pivot.mean(axis=1).round(1))
+            channel_pivot = channel_pivot.sort_values('平均占比(%)', ascending=False)
+            channel_pivot.insert(0, '排名', range(1, len(channel_pivot) + 1))
+            st.dataframe(channel_pivot, use_container_width=True)
+
+        with channel_detail_col2:
+            st.markdown("#### 🎯 渠道市场份额变化")
+            if len(selected_months) >= 2:
+                channel_share = []
+                channel_trend_all = aggregate_trend_data(df_trend, 'channel', start_month=trend_start_month, end_month=trend_end_month)
+                for tag in channel_trend_all['tag'].unique():
+                    tag_data = channel_trend_all[channel_trend_all['tag'] == tag].sort_values('month')
+                    if len(tag_data) >= 2:
+                        first_val = tag_data['percentage'].iloc[0]
+                        last_val = tag_data['percentage'].iloc[-1]
+                        diff = last_val - first_val
+                        channel_share.append({
+                            '渠道': tag,
+                            f'期初({selected_months[0]})': round(first_val, 1),
+                            f'期末({selected_months[-1]})': round(last_val, 1),
+                            '份额变化': round(diff, 1),
+                            '趋势': '↑ 上升' if diff > 0.5 else ('↓ 下降' if diff < -0.5 else '→ 稳定')
+                        })
+                if channel_share:
+                    share_df = pd.DataFrame(channel_share)
+                    share_df = share_df.sort_values('份额变化', ascending=False)
+                    share_df.insert(0, '排名', range(1, len(share_df) + 1))
+                    st.dataframe(share_df.head(10), use_container_width=True, hide_index=True)
+                else:
+                    st.info("暂无足够数据分析渠道份额变化")
+            else:
+                st.info("需要选择至少2个月份来分析渠道份额变化")
+
+    if enable_compare:
+        st.markdown("---")
+        st.subheader(f"🔄 时间段对比分析 - {PREFERENCE_TYPES[compare_pref_type]}")
+
+        p1_start_valid = available_months.index(period1_start)
+        p1_end_valid = available_months.index(period1_end)
+        p2_start_valid = available_months.index(period2_start)
+        p2_end_valid = available_months.index(period2_end)
+
+        if p1_start_valid > p1_end_valid or p2_start_valid > p2_end_valid:
+            st.error("❌ 时间段配置错误：起始月份应早于或等于结束月份")
+        else:
+            period1_label = f"A: {period1_start} ~ {period1_end}"
+            period2_label = f"B: {period2_start} ~ {period2_end}"
+
+            compare_col1, compare_col2, compare_col3, compare_col4 = st.columns(4)
+            with compare_col1:
+                st.metric("时间段 A", period1_label)
+            with compare_col2:
+                st.metric("时间段 B", period2_label)
+            with compare_col3:
+                st.metric("A 月份数", f"{p1_end_valid - p1_start_valid + 1}")
+            with compare_col4:
+                st.metric("B 月份数", f"{p2_end_valid - p2_start_valid + 1}")
+
+            st.markdown("---")
+
+            comparison = compare_periods(
+                df_trend, compare_pref_type,
+                period1_start, period1_end,
+                period2_start, period2_end
+            )
+
+            comp_chart_col1, comp_table_col2 = st.columns([1.5, 1])
+
+            with comp_chart_col1:
+                comp_fig = create_period_comparison_chart(
+                    comparison,
+                    PREFERENCE_TYPES[compare_pref_type],
+                    period1_label,
+                    period2_label
+                )
+                st.pyplot(comp_fig, use_container_width=True)
+
+            with comp_table_col2:
+                st.markdown("#### 📊 详细对比数据")
+                comp_display = comparison.copy()
+                comp_display.columns = ['标签', f'{period1_label}(%)', f'{period2_label}(%)', '差值(%)', '变化率(%)']
+                comp_display.insert(0, '排名', range(1, len(comp_display) + 1))
+                comp_display = comp_display.head(15)
+                st.dataframe(comp_display, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+
+            comp_detail1, comp_detail2, comp_detail3 = st.columns(3)
+
+            with comp_detail1:
+                st.markdown(f"#### 📈 {PREFERENCE_TYPES[compare_pref_type]} 上升 TOP5")
+                up_df = comparison[comparison['diff_pct'] > 0].sort_values('diff_pct', ascending=False).head(5)
+                if len(up_df) > 0:
+                    up_display = up_df.copy()
+                    up_display.columns = ['标签', 'A段占比(%)', 'B段占比(%)', '差值(%)', '变化率(%)']
+                    up_display.insert(0, '排名', range(1, len(up_display) + 1))
+                    st.dataframe(up_display, use_container_width=True, hide_index=True)
+                else:
+                    st.info("暂无上升趋势标签")
+
+            with comp_detail2:
+                st.markdown(f"#### 📉 {PREFERENCE_TYPES[compare_pref_type]} 下降 TOP5")
+                down_df = comparison[comparison['diff_pct'] < 0].sort_values('diff_pct', ascending=True).head(5)
+                if len(down_df) > 0:
+                    down_display = down_df.copy()
+                    down_display.columns = ['标签', 'A段占比(%)', 'B段占比(%)', '差值(%)', '变化率(%)']
+                    down_display.insert(0, '排名', range(1, len(down_display) + 1))
+                    st.dataframe(down_display, use_container_width=True, hide_index=True)
+                else:
+                    st.info("暂无下降趋势标签")
+
+            with comp_detail3:
+                st.markdown(f"#### ⚖️ {PREFERENCE_TYPES[compare_pref_type]} 变化最小 TOP5")
+                stable_df = comparison.copy()
+                stable_df['abs_diff'] = stable_df['diff_pct'].abs()
+                stable_df = stable_df.sort_values('abs_diff', ascending=True).head(5)
+                if len(stable_df) > 0:
+                    stable_display = stable_df[['tag', 'period1_pct', 'period2_pct', 'diff_pct']].copy()
+                    stable_display.columns = ['标签', 'A段占比(%)', 'B段占比(%)', '差值(%)']
+                    stable_display.insert(0, '排名', range(1, len(stable_display) + 1))
+                    st.dataframe(stable_display, use_container_width=True, hide_index=True)
+                else:
+                    st.info("暂无数据")
 
     st.markdown("---")
 
