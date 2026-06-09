@@ -583,6 +583,40 @@ def get_city_level_stats(df):
     return city_stats
 
 
+def get_province_city_overview(df):
+    overview = df.groupby('province', observed=True).agg({
+        'city': 'nunique',
+        'user_id': 'count',
+        'total_spent': ['sum', 'mean'],
+        'behavior_score': 'mean'
+    }).round(2)
+
+    overview.columns = [
+        '覆盖城市数', '用户数量', '总消费金额', '平均消费金额', '平均行为得分'
+    ]
+    overview = overview.reset_index()
+    overview = overview.rename(columns={'province': '省份'})
+
+    total_users = overview['用户数量'].sum()
+    overview['用户占比(%)'] = (overview['用户数量'] / total_users * 100).round(2)
+    overview = overview.sort_values('用户数量', ascending=False).reset_index(drop=True)
+    overview.insert(0, '排名', range(1, len(overview) + 1))
+
+    return overview
+
+
+def get_city_top10_table(df):
+    stats = get_city_level_stats(df)
+    top10 = stats.head(10).copy()
+
+    result = top10[['排名', '城市', '用户数量', '总消费金额', '平均行为得分']].copy()
+    result = result.rename(columns={'平均行为得分': '活跃度'})
+    result['总消费金额'] = result['总消费金额'].apply(lambda x: f"¥{x:,.2f}")
+    result['活跃度'] = result['活跃度'].round(1)
+
+    return result
+
+
 def create_behavior_pie_chart(df, theme=None):
     if theme is None:
         theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
@@ -1141,9 +1175,16 @@ def main():
                 
                 st.markdown("---")
                 st.markdown("#### 📊 导出数据统计")
+                stat_scope = result.get('export_scope', '用户明细数据')
+                
                 stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
                 with stat_col1:
-                    st.metric("记录数", f"{result['stats']['total_records']:,}")
+                    if stat_scope == "城市级别汇总":
+                        st.metric("城市数", f"{result['stats']['total_records']:,}")
+                    elif stat_scope == "省份级别汇总":
+                        st.metric("省份记录数", f"{result['stats']['total_records']:,}")
+                    else:
+                        st.metric("用户数", f"{result['stats']['total_records']:,}")
                 with stat_col2:
                     st.metric("字段数", f"{result['stats']['total_columns']}")
                 with stat_col3:
@@ -1155,30 +1196,57 @@ def main():
                 detail_col1, detail_col2 = st.columns(2)
                 
                 with detail_col1:
-                    st.markdown("##### 🎯 用户群体分布")
-                    if result['stats']['segment_distribution']:
-                        for seg, cnt in result['stats']['segment_distribution'].items():
-                            pct = round(cnt / result['stats']['total_records'] * 100, 1)
-                            st.markdown(f"- **{seg}**: {cnt:,} 人 ({pct}%)")
+                    if stat_scope in ["城市级别汇总", "省份级别汇总"]:
+                        st.markdown("##### 🏙️ 汇总覆盖范围")
+                        if result['stats'].get('province_count'):
+                            st.markdown(f"- **覆盖省份**: {result['stats']['province_count']} 个")
+                        if stat_scope == "城市级别汇总" and result['stats'].get('city_count'):
+                            st.markdown(f"- **覆盖城市**: {result['stats']['city_count']} 个")
+                        if result['stats'].get('total_revenue'):
+                            st.markdown(f"- **汇总消费总额**: ¥{result['stats']['total_revenue']:,.2f}")
+                        if result['stats'].get('avg_behavior_score'):
+                            st.markdown(f"- **平均行为得分**: {result['stats']['avg_behavior_score']}")
                     else:
-                        st.markdown("- 无分群数据")
+                        st.markdown("##### 🎯 用户群体分布")
+                        if result['stats']['segment_distribution']:
+                            total = result['stats']['total_records']
+                            for seg, cnt in result['stats']['segment_distribution'].items():
+                                pct = round(cnt / total * 100, 1) if total > 0 else 0
+                                st.markdown(f"- **{seg}**: {cnt:,} 人 ({pct}%)")
+                        else:
+                            st.markdown("- 无分群数据")
                 
                 with detail_col2:
-                    st.markdown("##### 📈 关键指标")
-                    if result['stats']['age_range']:
-                        st.markdown(f"- **年龄范围**: {result['stats']['age_range']['min']} - {result['stats']['age_range']['max']} 岁 (平均: {result['stats']['age_range']['mean']}岁)")
-                    if result['stats']['province_count']:
-                        st.markdown(f"- **覆盖省份**: {result['stats']['province_count']} 个")
-                    if result['stats']['total_revenue']:
-                        st.markdown(f"- **总消费金额**: ¥{result['stats']['total_revenue']:,.2f}")
-                    if result['stats']['avg_behavior_score']:
-                        st.markdown(f"- **平均行为得分**: {result['stats']['avg_behavior_score']}")
-                    
-                    st.markdown("##### 👥 性别分布")
-                    if result['stats']['gender_distribution']:
-                        for gender, cnt in result['stats']['gender_distribution'].items():
-                            pct = round(cnt / result['stats']['total_records'] * 100, 1)
-                            st.markdown(f"- **{gender}**: {cnt:,} 人 ({pct}%)")
+                    if stat_scope in ["城市级别汇总", "省份级别汇总"]:
+                        st.markdown("##### 📋 汇总说明")
+                        if stat_scope == "城市级别汇总":
+                            st.markdown("- 每条记录代表一个城市的汇总数据")
+                            st.markdown("- 用户数量为该城市覆盖的用户总数")
+                            st.markdown("- 总消费金额为该城市用户消费总和")
+                            if result['export_format'] == 'Excel':
+                                st.markdown("- Excel 包含多工作表：汇总、各省明细、城市类型统计")
+                        elif stat_scope == "省份级别汇总":
+                            st.markdown("- 每条记录代表一个省份的汇总数据")
+                            st.markdown("- 用户数量为该省份覆盖的用户总数")
+                            if result['export_format'] == 'Excel':
+                                st.markdown("- Excel 包含多工作表：汇总、南北方统计")
+                    else:
+                        st.markdown("##### 📈 关键指标")
+                        if result['stats']['age_range']:
+                            st.markdown(f"- **年龄范围**: {result['stats']['age_range']['min']} - {result['stats']['age_range']['max']} 岁 (平均: {result['stats']['age_range']['mean']}岁)")
+                        if result['stats']['province_count']:
+                            st.markdown(f"- **覆盖省份**: {result['stats']['province_count']} 个")
+                        if result['stats']['total_revenue']:
+                            st.markdown(f"- **总消费金额**: ¥{result['stats']['total_revenue']:,.2f}")
+                        if result['stats']['avg_behavior_score']:
+                            st.markdown(f"- **平均行为得分**: {result['stats']['avg_behavior_score']}")
+                        
+                        st.markdown("##### 👥 性别分布")
+                        if result['stats']['gender_distribution']:
+                            total = result['stats']['total_records']
+                            for gender, cnt in result['stats']['gender_distribution'].items():
+                                pct = round(cnt / total * 100, 1) if total > 0 else 0
+                                st.markdown(f"- **{gender}**: {cnt:,} 人 ({pct}%)")
                 
             st.markdown("---")
     
@@ -1363,6 +1431,130 @@ def main():
         st.pyplot(region_ns_fig, use_container_width=True)
         if selected_province != "全部":
             st.caption("💡 该图表基于全量数据绘制，不受省份筛选影响")
+
+    if selected_province == "全部":
+        st.markdown("---")
+        st.subheader("📋 各省份城市数据总览")
+        province_overview = get_province_city_overview(df_filtered)
+        display_overview = province_overview.copy()
+        display_overview['总消费金额'] = display_overview['总消费金额'].apply(lambda x: f"¥{x:,.0f}")
+        display_overview['平均消费金额'] = display_overview['平均消费金额'].apply(lambda x: f"¥{x:,.2f}")
+        display_overview['平均行为得分'] = display_overview['平均行为得分'].round(1)
+        display_overview['用户占比(%)'] = display_overview['用户占比(%)'].round(2)
+        st.dataframe(display_overview, use_container_width=True, hide_index=True)
+    else:
+        st.markdown("---")
+        st.subheader(f"🏙️ {selected_province} 城市分布前十")
+        city_top10 = get_city_top10_table(df_filtered)
+        st.dataframe(city_top10, use_container_width=True, hide_index=True)
+
+    if selected_province != "全部":
+        st.markdown("---")
+        st.subheader(f"🏙️ {selected_province} 城市级别分析")
+
+        city_stats = get_city_level_stats(df_filtered)
+        capital = get_province_capital(selected_province)
+
+        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+        with metric_col1:
+            st.metric("覆盖城市数", f"{city_stats['城市'].nunique()}")
+        with metric_col2:
+            total_city_revenue = city_stats['总消费金额'].sum()
+            st.metric("城市总消费", f"¥{total_city_revenue:,.0f}")
+        with metric_col3:
+            if capital and capital in city_stats['城市'].values:
+                capital_users = city_stats[city_stats['城市'] == capital]['用户数量'].values[0]
+                st.metric(f"省会({capital})用户", f"{capital_users:,}")
+            else:
+                st.metric("省会城市用户", "暂无数据")
+        with metric_col4:
+            avg_behavior = city_stats['平均行为得分'].mean()
+            st.metric("城市平均行为分", f"{avg_behavior:.1f}")
+
+        st.markdown("---")
+
+        city_col1, city_col2 = st.columns(2)
+
+        with city_col1:
+            st.markdown(f"### 📊 {selected_province} 城市用户分布")
+            city_top_n = st.slider(
+                "显示城市数量",
+                min_value=3,
+                max_value=min(20, len(city_stats)),
+                value=min(10, len(city_stats)),
+                key="city_top_n_slider"
+            )
+            city_dist_fig = create_city_distribution_chart(
+                df_filtered, selected_province, top_n=city_top_n
+            )
+            st.pyplot(city_dist_fig, use_container_width=True)
+
+        with city_col2:
+            st.markdown(f"### 📈 {selected_province} 城市类型对比分析")
+            if 'city_type' in df_filtered.columns and df_filtered['city_type'].nunique() > 0:
+                city_type_fig = create_city_type_comparison_chart(
+                    df_filtered, selected_province
+                )
+                st.pyplot(city_type_fig, use_container_width=True)
+            else:
+                st.info("暂无城市类型数据")
+
+        st.markdown("---")
+
+        st.markdown(f"### 📋 {selected_province} 城市详细统计")
+
+        display_city_stats = city_stats.copy()
+        for col in ['总消费金额', '平均消费金额']:
+            if col in display_city_stats.columns:
+                display_city_stats[col] = display_city_stats[col].apply(
+                    lambda x: f"¥{x:,.2f}"
+                )
+        for col in ['平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数', '用户占比(%)']:
+            if col in display_city_stats.columns:
+                display_city_stats[col] = display_city_stats[col].round(2)
+
+        st.dataframe(display_city_stats, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        city_type_col1, city_type_col2 = st.columns(2)
+
+        with city_type_col1:
+            st.markdown("#### 🏷️ 城市类型分布")
+            if 'city_type' in df_filtered.columns:
+                city_type_summary = df_filtered.groupby('city_type', observed=True).agg({
+                    'user_id': 'count',
+                    'total_spent': 'sum',
+                    'behavior_score': 'mean'
+                }).round(2)
+                city_type_summary = city_type_summary.reset_index()
+                city_type_summary.columns = ['城市类型', '用户数量', '总消费金额', '平均行为得分']
+                total_type_users = city_type_summary['用户数量'].sum()
+                city_type_summary['用户占比(%)'] = (city_type_summary['用户数量'] / total_type_users * 100).round(2)
+                city_type_summary['总消费金额'] = city_type_summary['总消费金额'].apply(lambda x: f"¥{x:,.2f}")
+                city_type_summary['平均行为得分'] = city_type_summary['平均行为得分'].round(2)
+                st.dataframe(city_type_summary, use_container_width=True, hide_index=True)
+            else:
+                st.info("暂无城市类型数据")
+
+        with city_type_col2:
+            st.markdown("#### 🏆 各指标领先城市")
+            if len(city_stats) > 0:
+                top_users = city_stats.iloc[0]
+                top_revenue = city_stats.loc[city_stats['总消费金额'].idxmax()]
+                top_behavior = city_stats.loc[city_stats['平均行为得分'].idxmax()]
+                top_spending = city_stats.loc[city_stats['平均消费金额'].idxmax()]
+
+                st.markdown(f"- **用户最多**: {top_users['城市']} ({top_users['用户数量']:,} 人)")
+                st.markdown(f"- **总消费最高**: {top_revenue['城市']} (¥{top_revenue['总消费金额']:,.2f})")
+                st.markdown(f"- **最活跃**: {top_behavior['城市']} (行为分 {top_behavior['平均行为得分']:.1f})")
+                st.markdown(f"- **人均消费最高**: {top_spending['城市']} (¥{top_spending['平均消费金额']:,.2f})")
+            else:
+                st.info("暂无数据")
+
+        if export_format == "Excel":
+            st.markdown("---")
+            st.info(f"💡 提示：选择侧边栏 **导出范围** 为 **城市级别汇总**，可将 {selected_province} 的城市数据导出到 Excel 中")
 
     st.markdown("---")
 
@@ -1581,114 +1773,6 @@ def main():
         province_summary.columns = ['省份', '用户数']
         province_summary['占比'] = (province_summary['用户数'] / len(df_filtered) * 100).round(2).astype(str) + '%'
         st.dataframe(province_summary, use_container_width=True, hide_index=True)
-    
-    if selected_province != "全部":
-        st.markdown("---")
-        st.subheader(f"🏙️ {selected_province} 城市级别分析")
-
-        city_stats = get_city_level_stats(df_filtered)
-        capital = get_province_capital(selected_province)
-
-        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
-        with metric_col1:
-            st.metric("覆盖城市数", f"{city_stats['城市'].nunique()}")
-        with metric_col2:
-            total_city_revenue = city_stats['总消费金额'].sum()
-            st.metric("城市总消费", f"¥{total_city_revenue:,.0f}")
-        with metric_col3:
-            if capital and capital in city_stats['城市'].values:
-                capital_users = city_stats[city_stats['城市'] == capital]['用户数量'].values[0]
-                st.metric(f"省会({capital})用户", f"{capital_users:,}")
-            else:
-                st.metric("省会城市用户", "暂无数据")
-        with metric_col4:
-            avg_behavior = city_stats['平均行为得分'].mean()
-            st.metric("城市平均行为分", f"{avg_behavior:.1f}")
-
-        st.markdown("---")
-
-        city_col1, city_col2 = st.columns(2)
-
-        with city_col1:
-            st.markdown(f"### 📊 {selected_province} 城市用户分布")
-            city_top_n = st.slider(
-                "显示城市数量",
-                min_value=3,
-                max_value=min(20, len(city_stats)),
-                value=min(10, len(city_stats)),
-                key="city_top_n_slider"
-            )
-            city_dist_fig = create_city_distribution_chart(
-                df_filtered, selected_province, top_n=city_top_n
-            )
-            st.pyplot(city_dist_fig, use_container_width=True)
-
-        with city_col2:
-            st.markdown(f"### 📈 {selected_province} 城市类型对比分析")
-            if 'city_type' in df_filtered.columns and df_filtered['city_type'].nunique() > 0:
-                city_type_fig = create_city_type_comparison_chart(
-                    df_filtered, selected_province
-                )
-                st.pyplot(city_type_fig, use_container_width=True)
-            else:
-                st.info("暂无城市类型数据")
-
-        st.markdown("---")
-
-        st.markdown(f"### 📋 {selected_province} 城市详细统计")
-
-        display_city_stats = city_stats.copy()
-        for col in ['总消费金额', '平均消费金额']:
-            if col in display_city_stats.columns:
-                display_city_stats[col] = display_city_stats[col].apply(
-                    lambda x: f"¥{x:,.2f}"
-                )
-        for col in ['平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数', '用户占比(%)']:
-            if col in display_city_stats.columns:
-                display_city_stats[col] = display_city_stats[col].round(2)
-
-        st.dataframe(display_city_stats, use_container_width=True, hide_index=True)
-
-        st.markdown("---")
-
-        city_type_col1, city_type_col2 = st.columns(2)
-
-        with city_type_col1:
-            st.markdown("#### 🏷️ 城市类型分布")
-            if 'city_type' in df_filtered.columns:
-                city_type_summary = df_filtered.groupby('city_type', observed=True).agg({
-                    'user_id': 'count',
-                    'total_spent': 'sum',
-                    'behavior_score': 'mean'
-                }).round(2)
-                city_type_summary = city_type_summary.reset_index()
-                city_type_summary.columns = ['城市类型', '用户数量', '总消费金额', '平均行为得分']
-                total_type_users = city_type_summary['用户数量'].sum()
-                city_type_summary['用户占比(%)'] = (city_type_summary['用户数量'] / total_type_users * 100).round(2)
-                city_type_summary['总消费金额'] = city_type_summary['总消费金额'].apply(lambda x: f"¥{x:,.2f}")
-                city_type_summary['平均行为得分'] = city_type_summary['平均行为得分'].round(2)
-                st.dataframe(city_type_summary, use_container_width=True, hide_index=True)
-            else:
-                st.info("暂无城市类型数据")
-
-        with city_type_col2:
-            st.markdown("#### 🏆 各指标领先城市")
-            if len(city_stats) > 0:
-                top_users = city_stats.iloc[0]
-                top_revenue = city_stats.loc[city_stats['总消费金额'].idxmax()]
-                top_behavior = city_stats.loc[city_stats['平均行为得分'].idxmax()]
-                top_spending = city_stats.loc[city_stats['平均消费金额'].idxmax()]
-
-                st.markdown(f"- **用户最多**: {top_users['城市']} ({top_users['用户数量']:,} 人)")
-                st.markdown(f"- **总消费最高**: {top_revenue['城市']} (¥{top_revenue['总消费金额']:,.2f})")
-                st.markdown(f"- **最活跃**: {top_behavior['城市']} (行为分 {top_behavior['平均行为得分']:.1f})")
-                st.markdown(f"- **人均消费最高**: {top_spending['城市']} (¥{top_spending['平均消费金额']:,.2f})")
-            else:
-                st.info("暂无数据")
-
-        if export_format == "Excel":
-            st.markdown("---")
-            st.info(f"💡 提示：选择侧边栏 **导出范围** 为 **城市级别汇总**，可将 {selected_province} 的城市数据导出到 Excel 中")
     
     if show_data:
         st.markdown("---")

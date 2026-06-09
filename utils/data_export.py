@@ -53,6 +53,7 @@ def get_data_statistics(df):
         'segment_distribution': {},
         'region_count': 0,
         'province_count': 0,
+        'city_count': 0,
         'total_revenue': 0,
         'avg_behavior_score': 0
     }
@@ -76,14 +77,21 @@ def get_data_statistics(df):
         if 'region_type' in df.columns:
             stats['region_count'] = df['region_type'].nunique()
 
-        if 'province' in df.columns:
-            stats['province_count'] = df['province'].nunique()
+        province_col = 'province' if 'province' in df.columns else ('省份' if '省份' in df.columns else None)
+        if province_col:
+            stats['province_count'] = df[province_col].nunique()
 
-        if 'total_spent' in df.columns:
-            stats['total_revenue'] = round(float(df['total_spent'].sum()), 2)
+        city_col = 'city' if 'city' in df.columns else ('城市' if '城市' in df.columns else None)
+        if city_col:
+            stats['city_count'] = df[city_col].nunique()
 
-        if 'behavior_score' in df.columns:
-            stats['avg_behavior_score'] = round(float(df['behavior_score'].mean()), 2)
+        revenue_col = 'total_spent' if 'total_spent' in df.columns else ('总消费金额' if '总消费金额' in df.columns else None)
+        if revenue_col:
+            stats['total_revenue'] = round(float(df[revenue_col].sum()), 2)
+
+        behavior_col = 'behavior_score' if 'behavior_score' in df.columns else ('平均行为得分' if '平均行为得分' in df.columns else None)
+        if behavior_col:
+            stats['avg_behavior_score'] = round(float(df[behavior_col].mean()), 2)
 
     return stats
 
