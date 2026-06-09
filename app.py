@@ -19,6 +19,13 @@ from user_behavior import (
     segment_users,
     get_segment_summary
 )
+from theme_config import (
+    THEMES,
+    DEFAULT_THEME,
+    get_theme,
+    get_theme_options,
+    generate_css
+)
 import os
 import sys as _sys
 def get_available_chinese_font():
@@ -68,6 +75,11 @@ from utils import (
 
 warnings.filterwarnings('ignore')
 
+if 'theme' not in st.session_state:
+    st.session_state.theme = DEFAULT_THEME
+
+current_theme = get_theme(st.session_state.theme)
+
 st.set_page_config(
     page_title="用户画像分析",
     page_icon="👥",
@@ -75,37 +87,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-custom_css = """
-<style>
-.main {
-    background-color: #f8f9fa;
-}
-.stApp > header {
-    background-color: #2C3E50;
-}
-.stApp > header h1 {
-    color: white !important;
-}
-.css-1d391kg {
-    background-color: #2C3E50;
-}
-.metric-card {
-    background: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    margin: 10px 0;
-}
-.chart-container {
-    background: white;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    margin: 10px 0;
-}
-</style>
-"""
-st.markdown(custom_css, unsafe_allow_html=True)
+st.markdown(generate_css(current_theme), unsafe_allow_html=True)
 
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
@@ -172,29 +154,36 @@ def generate_mock_data(n_samples=3000):
     return df
 
 
-def create_gender_chart(df):
+def create_gender_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tc = theme['colors']
+    tchart = theme['chart']
+
     fig, ax = plt.subplots(figsize=(10, 5))
-    
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
     font_prop = FontProperties(family='SimHei', size=12)
     font_title = FontProperties(family='SimHei', size=16, weight='bold')
     font_label = FontProperties(family='SimHei', size=12, weight='bold')
     font_text = FontProperties(family='SimHei', size=11, weight='bold')
-    
+
     gender_counts = df['gender'].value_counts()
-    colors = ['#3498DB', '#E74C3C']
-    
+    colors = tchart['palette_bar']
+
     bars = ax.barh(
-        gender_counts.index, 
+        gender_counts.index,
         gender_counts.values,
         color=colors,
-        edgecolor='white',
+        edgecolor=tchart['axes_facecolor'],
         linewidth=2
     )
-    
-    ax.set_xlabel('用户数量', fontproperties=font_label)
-    ax.set_ylabel('性别', fontproperties=font_label)
-    ax.set_title('用户性别分布', fontproperties=font_title, pad=20)
-    
+
+    ax.set_xlabel('用户数量', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('性别', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title('用户性别分布', fontproperties=font_title, pad=20, color=tchart['text_color'])
+
     total = len(df)
     for i, (bar, count) in enumerate(zip(bars, gender_counts.values)):
         percentage = (count / total) * 100
@@ -204,61 +193,76 @@ def create_gender_chart(df):
             f'{count:,} ({percentage:.1f}%)',
             va='center',
             fontproperties=font_text,
-            color='#2C3E50'
+            color=tchart['text_color']
         )
-    
+
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(font_prop)
-    
+        label.set_color(tchart['tick_color'])
+
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.xaxis.grid(True, alpha=0.3, linestyle='--')
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.xaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
     ax.set_axisbelow(True)
-    
+
     plt.tight_layout()
     return fig
 
 
-def create_age_gender_chart(df):
+def create_age_gender_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
     fig, ax = plt.subplots(figsize=(12, 6))
-    
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
     font_prop = FontProperties(family='SimHei', size=11)
     font_title = FontProperties(family='SimHei', size=16, weight='bold')
     font_label = FontProperties(family='SimHei', size=12, weight='bold')
     font_text = FontProperties(family='SimHei', size=9, weight='bold')
     font_legend = FontProperties(family='SimHei', size=11)
-    
+
     age_order = ['18-24', '25-34', '35-44', '45-54', '55+']
-    
+
     age_gender_data = df.groupby(['age_group', 'gender']).size().unstack(fill_value=0)
     age_gender_data = age_gender_data.reindex(age_order)
-    
+
     x = np.arange(len(age_order))
     width = 0.35
-    
+
     male_counts = age_gender_data.get('男', pd.Series([0]*len(age_order), index=age_order)).values
     female_counts = age_gender_data.get('女', pd.Series([0]*len(age_order), index=age_order)).values
-    
-    bars1 = ax.bar(x - width/2, male_counts, width, 
-                   label='男', color='#3498DB', edgecolor='white', linewidth=1.5)
-    bars2 = ax.bar(x + width/2, female_counts, width, 
-                   label='女', color='#E74C3C', edgecolor='white', linewidth=1.5)
-    
-    ax.set_xlabel('年龄段', fontproperties=font_label)
-    ax.set_ylabel('用户数量', fontproperties=font_label)
-    ax.set_title('用户年龄与性别分布', fontproperties=font_title, pad=20)
+
+    bars1 = ax.bar(x - width/2, male_counts, width,
+                   label='男', color=tchart['palette_bar'][0], edgecolor=tchart['axes_facecolor'], linewidth=1.5)
+    bars2 = ax.bar(x + width/2, female_counts, width,
+                   label='女', color=tchart['palette_bar'][1], edgecolor=tchart['axes_facecolor'], linewidth=1.5)
+
+    ax.set_xlabel('年龄段', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('用户数量', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title('用户年龄与性别分布', fontproperties=font_title, pad=20, color=tchart['text_color'])
     ax.set_xticks(x)
     ax.set_xticklabels(age_order, fontproperties=font_prop)
-    ax.legend(prop=font_legend, frameon=True, shadow=True)
-    
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True)
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(font_prop)
-    
+        label.set_color(tchart['tick_color'])
+
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.yaxis.grid(True, alpha=0.3, linestyle='--')
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
     ax.set_axisbelow(True)
-    
+
     total = len(df)
     for bar in bars1:
         height = bar.get_height()
@@ -270,9 +274,9 @@ def create_age_gender_chart(df):
                 f'{int(height)}',
                 ha='center', va='bottom',
                 fontproperties=font_text,
-                color='#2C3E50'
+                color=tchart['text_color']
             )
-    
+
     for bar in bars2:
         height = bar.get_height()
         if height > 0:
@@ -283,37 +287,43 @@ def create_age_gender_chart(df):
                 f'{int(height)}',
                 ha='center', va='bottom',
                 fontproperties=font_text,
-                color='#2C3E50'
+                color=tchart['text_color']
             )
-    
+
     plt.tight_layout()
     return fig
 
 
-def create_province_rank_chart(df, top_n=15):
+def create_province_rank_chart(df, top_n=15, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
     fig, ax = plt.subplots(figsize=(12, 8))
-    
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
     font_prop = FontProperties(family='SimHei', size=10)
     font_title = FontProperties(family='SimHei', size=16, weight='bold')
     font_label = FontProperties(family='SimHei', size=12, weight='bold')
     font_text = FontProperties(family='SimHei', size=10, weight='bold')
-    
+
     province_counts = df['province'].value_counts().head(top_n)
-    
-    colors = sns.color_palette("viridis", len(province_counts))
-    
+
+    colors = sns.color_palette(tchart['palette_province'], len(province_counts))
+
     bars = ax.barh(
         province_counts.index[::-1],
         province_counts.values[::-1],
         color=colors,
-        edgecolor='white',
+        edgecolor=tchart['axes_facecolor'],
         linewidth=1.5
     )
-    
-    ax.set_xlabel('用户数量', fontproperties=font_label)
-    ax.set_ylabel('省份', fontproperties=font_label)
-    ax.set_title(f'用户省份分布前{top_n}名', fontproperties=font_title, pad=20)
-    
+
+    ax.set_xlabel('用户数量', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('省份', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title(f'用户省份分布前{top_n}名', fontproperties=font_title, pad=20, color=tchart['text_color'])
+
     total = len(df)
     for i, (bar, count) in enumerate(zip(bars, province_counts.values[::-1])):
         percentage = (count / total) * 100
@@ -323,49 +333,58 @@ def create_province_rank_chart(df, top_n=15):
             f'{count:,} ({percentage:.1f}%)',
             va='center',
             fontproperties=font_text,
-            color='#2C3E50'
+            color=tchart['text_color']
         )
-    
+
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(font_prop)
-    
+        label.set_color(tchart['tick_color'])
+
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.xaxis.grid(True, alpha=0.3, linestyle='--')
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.xaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
     ax.set_axisbelow(True)
-    
+
     plt.tight_layout()
     return fig
 
 
-def create_region_ns_chart(df):
+def create_region_ns_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
     fig, ax = plt.subplots(figsize=(10, 6))
-    
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
     font_prop = FontProperties(family='SimHei', size=12)
     font_title = FontProperties(family='SimHei', size=16, weight='bold')
     font_label = FontProperties(family='SimHei', size=12, weight='bold')
     font_text = FontProperties(family='SimHei', size=12, weight='bold')
-    
+
     region_counts = df['region_type'].value_counts()
     region_order = ['南方', '北方']
     region_counts = region_counts.reindex(region_order)
     region_counts = region_counts.fillna(0)
-    
-    colors = ['#E74C3C', '#3498DB']
-    
+
+    colors = tchart['palette_region']
+
     bars = ax.bar(
         region_counts.index,
         region_counts.values,
         color=colors,
-        edgecolor='white',
+        edgecolor=tchart['axes_facecolor'],
         linewidth=2,
         width=0.5
     )
-    
-    ax.set_xlabel('地域', fontproperties=font_label)
-    ax.set_ylabel('用户数量', fontproperties=font_label)
-    ax.set_title('南北方用户分布对比', fontproperties=font_title, pad=20)
-    
+
+    ax.set_xlabel('地域', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('用户数量', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title('南北方用户分布对比', fontproperties=font_title, pad=20, color=tchart['text_color'])
+
     total = len(df)
     for bar, count in zip(bars, region_counts.values):
         height = bar.get_height()
@@ -377,23 +396,32 @@ def create_region_ns_chart(df):
             ha='center',
             va='bottom',
             fontproperties=font_text,
-            color='#2C3E50'
+            color=tchart['text_color']
         )
-    
+
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(font_prop)
-    
+        label.set_color(tchart['tick_color'])
+
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.yaxis.grid(True, alpha=0.3, linestyle='--')
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
     ax.set_axisbelow(True)
-    
+
     plt.tight_layout()
     return fig
 
 
-def create_behavior_pie_chart(df):
+def create_behavior_pie_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
     fig, ax = plt.subplots(figsize=(10, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
 
     font_prop = FontProperties(family='SimHei', size=12)
     font_title = FontProperties(family='SimHei', size=16, weight='bold')
@@ -404,7 +432,7 @@ def create_behavior_pie_chart(df):
     segment_counts = segment_counts.reindex(segment_order)
     segment_counts = segment_counts.fillna(0)
 
-    colors = ['#27AE60', '#3498DB', '#95A5A6']
+    colors = tchart['palette_segment']
     explode = (0.05, 0.03, 0.03)
 
     wedges, texts, autotexts = ax.pie(
@@ -415,21 +443,22 @@ def create_behavior_pie_chart(df):
         startangle=90,
         explode=explode,
         pctdistance=0.75,
-        wedgeprops=dict(edgecolor='white', linewidth=3)
+        wedgeprops=dict(edgecolor=tchart['figure_facecolor'], linewidth=3)
     )
 
     for text in texts:
         text.set_fontproperties(font_text)
+        text.set_color(tchart['text_color'])
     for autotext in autotexts:
         autotext.set_fontproperties(font_text)
-        autotext.set_color('white')
+        autotext.set_color(tchart['pie_text_color'])
 
     total = segment_counts.sum()
     legend_labels = [
         f'{seg}: {int(cnt)}人 ({cnt/total*100:.1f}%)'
         for seg, cnt in zip(segment_counts.index, segment_counts.values)
     ]
-    ax.legend(
+    legend = ax.legend(
         wedges, legend_labels,
         loc='center left',
         bbox_to_anchor=(1, 0.5),
@@ -437,15 +466,23 @@ def create_behavior_pie_chart(df):
         frameon=True,
         shadow=True
     )
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
 
-    ax.set_title('用户行为分群分布', fontproperties=font_title, pad=20)
+    ax.set_title('用户行为分群分布', fontproperties=font_title, pad=20, color=tchart['text_color'])
 
     plt.tight_layout()
     return fig
 
 
-def create_segment_comparison_chart(df):
+def create_segment_comparison_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
 
     font_prop = FontProperties(family='SimHei', size=10)
     font_title = FontProperties(family='SimHei', size=14, weight='bold')
@@ -453,7 +490,7 @@ def create_segment_comparison_chart(df):
     font_text = FontProperties(family='SimHei', size=9, weight='bold')
 
     segment_order = ['活跃用户', '普通用户', '沉睡用户']
-    colors = ['#27AE60', '#3498DB', '#95A5A6']
+    colors = tchart['palette_segment']
 
     summary = df.groupby('user_segment', observed=True).agg({
         'login_frequency': 'mean',
@@ -470,23 +507,25 @@ def create_segment_comparison_chart(df):
     ]
 
     for col, title, ax in metrics:
+        ax.set_facecolor(tchart['axes_facecolor'])
         values = summary[col].values
         bars = ax.bar(
             range(len(segment_order)),
             values,
             color=colors,
-            edgecolor='white',
+            edgecolor=tchart['axes_facecolor'],
             linewidth=2,
             width=0.6
         )
 
         ax.set_xticks(range(len(segment_order)))
         ax.set_xticklabels(segment_order, fontproperties=font_prop)
-        ax.set_title(title, fontproperties=font_title, pad=10)
-        ax.set_ylabel('数值', fontproperties=font_label)
+        ax.set_title(title, fontproperties=font_title, pad=10, color=tchart['text_color'])
+        ax.set_ylabel('数值', fontproperties=font_label, color=tchart['label_color'])
 
         for label in ax.get_xticklabels() + ax.get_yticklabels():
             label.set_fontproperties(font_prop)
+            label.set_color(tchart['tick_color'])
 
         for bar, val in zip(bars, values):
             ax.text(
@@ -495,21 +534,29 @@ def create_segment_comparison_chart(df):
                 f'{val:.1f}',
                 ha='center',
                 fontproperties=font_text,
-                color='#2C3E50'
+                color=tchart['text_color']
             )
 
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.yaxis.grid(True, alpha=0.3, linestyle='--')
+        ax.spines['left'].set_color(tchart['grid_color'])
+        ax.spines['bottom'].set_color(tchart['grid_color'])
+        ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
         ax.set_axisbelow(True)
 
-    fig.suptitle('不同行为群体关键指标对比', fontproperties=font_title, fontsize=16, y=1.02)
+    fig.suptitle('不同行为群体关键指标对比', fontproperties=font_title, fontsize=16, y=1.02, color=tchart['text_color'])
     plt.tight_layout()
     return fig
 
 
-def create_preference_wordcloud(df, pref_type, _version=3):
+def create_preference_wordcloud(df, pref_type, _version=3, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
     fig, ax = plt.subplots(figsize=(12, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
 
     _fp = get_available_chinese_font()
     font_prop = FontProperties(fname=_fp, size=14, weight='bold') if _fp else FontProperties(family='SimHei', size=14, weight='bold')
@@ -522,8 +569,8 @@ def create_preference_wordcloud(df, pref_type, _version=3):
     wc_kwargs = dict(
         width=800,
         height=500,
-        background_color='white',
-        colormap='viridis',
+        background_color=tchart['wordcloud_background'],
+        colormap=tchart['wordcloud_colormap'],
         max_words=100,
         prefer_horizontal=0.9,
         min_font_size=10,
@@ -541,17 +588,23 @@ def create_preference_wordcloud(df, pref_type, _version=3):
         ax.imshow(wc, interpolation='bilinear')
     else:
         ax.text(0.5, 0.5, '暂无数据', fontproperties=font_prop,
-                ha='center', va='center', transform=ax.transAxes)
+                ha='center', va='center', transform=ax.transAxes, color=tchart['text_color'])
 
     ax.axis('off')
-    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}词云', fontproperties=font_title, pad=20)
+    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}词云', fontproperties=font_title, pad=20, color=tchart['text_color'])
 
     plt.tight_layout()
     return fig
 
 
-def create_gender_preference_chart(df_with_gender, pref_type, top_n=8):
+def create_gender_preference_chart(df_with_gender, pref_type, top_n=8, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
     fig, ax = plt.subplots(figsize=(12, 7))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
 
     _fp = get_available_chinese_font()
     font_prop = FontProperties(fname=_fp, size=11) if _fp else FontProperties(family='SimHei', size=11)
@@ -564,9 +617,9 @@ def create_gender_preference_chart(df_with_gender, pref_type, top_n=8):
 
     if comp_df.empty:
         ax.text(0.5, 0.5, '暂无数据', fontproperties=font_prop,
-                ha='center', va='center', transform=ax.transAxes)
+                ha='center', va='center', transform=ax.transAxes, color=tchart['text_color'])
         ax.axis('off')
-        ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比', fontproperties=font_title, pad=20)
+        ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比', fontproperties=font_title, pad=20, color=tchart['text_color'])
         plt.tight_layout()
         return fig
 
@@ -578,34 +631,40 @@ def create_gender_preference_chart(df_with_gender, pref_type, top_n=8):
     labels = comp_df['标签'].values
 
     bars1 = ax.barh(y - width/2, male_values, width,
-                    label='男', color='#3498DB', edgecolor='white', linewidth=1.5)
+                    label='男', color=tchart['palette_bar'][0], edgecolor=tchart['axes_facecolor'], linewidth=1.5)
     bars2 = ax.barh(y + width/2, female_values, width,
-                    label='女', color='#E74C3C', edgecolor='white', linewidth=1.5)
+                    label='女', color=tchart['palette_bar'][1], edgecolor=tchart['axes_facecolor'], linewidth=1.5)
 
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontproperties=font_prop)
-    ax.set_xlabel('偏好占比 (%)', fontproperties=font_label)
-    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比前{top_n}名', fontproperties=font_title, pad=20)
-    ax.legend(prop=font_legend, frameon=True, shadow=True)
+    ax.set_xlabel('偏好占比 (%)', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比前{top_n}名', fontproperties=font_title, pad=20, color=tchart['text_color'])
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True)
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
 
     for bar in bars1:
         w = bar.get_width()
         if w > 0:
             ax.text(w + 0.1, bar.get_y() + bar.get_height()/2,
-                    f'{w:.1f}%', va='center', fontproperties=font_text, color='#2C3E50')
+                    f'{w:.1f}%', va='center', fontproperties=font_text, color=tchart['text_color'])
 
     for bar in bars2:
         w = bar.get_width()
         if w > 0:
             ax.text(w + 0.1, bar.get_y() + bar.get_height()/2,
-                    f'{w:.1f}%', va='center', fontproperties=font_text, color='#2C3E50')
+                    f'{w:.1f}%', va='center', fontproperties=font_text, color=tchart['text_color'])
 
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.xaxis.grid(True, alpha=0.3, linestyle='--')
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.xaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
     ax.set_axisbelow(True)
 
     plt.tight_layout()
@@ -616,9 +675,34 @@ def main():
     if 'export_result' not in st.session_state:
         st.session_state.export_result = None
 
+    if 'theme' not in st.session_state:
+        st.session_state.theme = DEFAULT_THEME
+
+    st.sidebar.header("🎨 主题设置")
+    theme_options = get_theme_options()
+    theme_keys = [opt[0] for opt in theme_options]
+    theme_labels = [opt[1] for opt in theme_options]
+    current_theme_idx = theme_keys.index(st.session_state.theme) if st.session_state.theme in theme_keys else 0
+
+    selected_theme = st.sidebar.selectbox(
+        "选择主题",
+        options=theme_keys,
+        index=current_theme_idx,
+        format_func=lambda x: theme_labels[theme_keys.index(x)],
+        help="切换亮色或暗色主题"
+    )
+
+    if selected_theme != st.session_state.theme:
+        st.session_state.theme = selected_theme
+        st.rerun()
+
+    theme = get_theme(st.session_state.theme)
+    tc = theme['colors']
+
     st.title("👥 用户画像分析")
     st.markdown("---")
-    
+
+    st.sidebar.markdown("---")
     st.sidebar.header("⚙️ 配置选项")
     
     n_samples = st.sidebar.slider(
@@ -993,7 +1077,7 @@ def main():
 
     seg_col1, seg_col2, seg_col3 = st.columns(3)
     segment_display = ['活跃用户', '普通用户', '沉睡用户']
-    segment_colors = ['#27AE60', '#3498DB', '#95A5A6']
+    segment_colors = [tc['accent_green'], tc['accent_blue'], tc['accent_gray']]
     segment_icons = ['🔥', '👤', '💤']
 
     df_behavior_view = df_filtered if len(df_filtered) > 0 else df_full
@@ -1006,14 +1090,14 @@ def main():
                     f"""
                     <div class="metric-card" style="border-top: 4px solid {color};">
                         <h3 style="color: {color}; margin: 0 0 10px 0;">{icon} {seg}</h3>
-                        <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 10px 0;">{len(seg_data):,} 人</p>
-                        <p style="color: #7f8c8d; margin: 5px 0;">占比: {len(seg_data)/len(df_behavior_view)*100:.1f}%</p>
-                        <hr style="margin: 15px 0;">
-                        <p><strong>平均登录:</strong> {seg_data['login_frequency'].mean():.1f}次</p>
-                        <p><strong>平均在线:</strong> {seg_data['online_hours'].mean():.1f}小时</p>
-                        <p><strong>平均购买:</strong> {seg_data['purchase_count'].mean():.1f}次</p>
-                        <p><strong>平均消费:</strong> ¥{seg_data['total_spent'].mean():,.0f}</p>
-                        <p><strong>平均行为分:</strong> {seg_data['behavior_score'].mean():.1f}</p>
+                        <p style="font-size: 28px; font-weight: bold; color: {tc['primary_text']}; margin: 10px 0;">{len(seg_data):,} 人</p>
+                        <p style="color: {tc['secondary_text']}; margin: 5px 0;">占比: {len(seg_data)/len(df_behavior_view)*100:.1f}%</p>
+                        <hr style="margin: 15px 0; border-color: {tc['border']};">
+                        <p style="color: {tc['primary_text']};"><strong>平均登录:</strong> {seg_data['login_frequency'].mean():.1f}次</p>
+                        <p style="color: {tc['primary_text']};"><strong>平均在线:</strong> {seg_data['online_hours'].mean():.1f}小时</p>
+                        <p style="color: {tc['primary_text']};"><strong>平均购买:</strong> {seg_data['purchase_count'].mean():.1f}次</p>
+                        <p style="color: {tc['primary_text']};"><strong>平均消费:</strong> ¥{seg_data['total_spent'].mean():,.0f}</p>
+                        <p style="color: {tc['primary_text']};"><strong>平均行为分:</strong> {seg_data['behavior_score'].mean():.1f}</p>
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -1078,10 +1162,10 @@ def main():
     with pcol1:
         st.markdown(
             f"""
-            <div class="metric-card" style="border-top: 4px solid #3498DB;">
-                <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">兴趣偏好集中度</p>
-                <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{concentration['interest_mean']:.1f}%</p>
-                <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['interest_std']:.1f}%</p>
+            <div class="metric-card" style="border-top: 4px solid {tc['accent_blue']};">
+                <p style="color: {tc['secondary_text']}; margin: 0 0 5px 0; font-size: 14px;">兴趣偏好集中度</p>
+                <p style="font-size: 28px; font-weight: bold; color: {tc['primary_text']}; margin: 5px 0;">{concentration['interest_mean']:.1f}%</p>
+                <p style="color: {tc['muted_text']}; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['interest_std']:.1f}%</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1090,10 +1174,10 @@ def main():
     with pcol2:
         st.markdown(
             f"""
-            <div class="metric-card" style="border-top: 4px solid #E74C3C;">
-                <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">消费偏好集中度</p>
-                <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{concentration['consumption_mean']:.1f}%</p>
-                <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['consumption_std']:.1f}%</p>
+            <div class="metric-card" style="border-top: 4px solid {tc['accent_red']};">
+                <p style="color: {tc['secondary_text']}; margin: 0 0 5px 0; font-size: 14px;">消费偏好集中度</p>
+                <p style="font-size: 28px; font-weight: bold; color: {tc['primary_text']}; margin: 5px 0;">{concentration['consumption_mean']:.1f}%</p>
+                <p style="color: {tc['muted_text']}; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['consumption_std']:.1f}%</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1102,10 +1186,10 @@ def main():
     with pcol3:
         st.markdown(
             f"""
-            <div class="metric-card" style="border-top: 4px solid #27AE60;">
-                <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">渠道偏好集中度</p>
-                <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{concentration['channel_mean']:.1f}%</p>
-                <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['channel_std']:.1f}%</p>
+            <div class="metric-card" style="border-top: 4px solid {tc['accent_green']};">
+                <p style="color: {tc['secondary_text']}; margin: 0 0 5px 0; font-size: 14px;">渠道偏好集中度</p>
+                <p style="font-size: 28px; font-weight: bold; color: {tc['primary_text']}; margin: 5px 0;">{concentration['channel_mean']:.1f}%</p>
+                <p style="color: {tc['muted_text']}; margin: 5px 0 0 0; font-size: 12px;">标准差 ±{concentration['channel_std']:.1f}%</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1116,10 +1200,10 @@ def main():
         if len(top_interest_tag) > 0:
             st.markdown(
                 f"""
-                <div class="metric-card" style="border-top: 4px solid #F39C12;">
-                    <p style="color: #7f8c8d; margin: 0 0 5px 0; font-size: 14px;">热门兴趣标签</p>
-                    <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 5px 0;">{top_interest_tag.iloc[0]['标签']}</p>
-                    <p style="color: #95a5a6; margin: 5px 0 0 0; font-size: 12px;">占比 {top_interest_tag.iloc[0]['占比']:.1f}%</p>
+                <div class="metric-card" style="border-top: 4px solid {tc['accent_orange']};">
+                    <p style="color: {tc['secondary_text']}; margin: 0 0 5px 0; font-size: 14px;">热门兴趣标签</p>
+                    <p style="font-size: 28px; font-weight: bold; color: {tc['primary_text']}; margin: 5px 0;">{top_interest_tag.iloc[0]['标签']}</p>
+                    <p style="color: {tc['muted_text']}; margin: 5px 0 0 0; font-size: 12px;">占比 {top_interest_tag.iloc[0]['占比']:.1f}%</p>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -1168,7 +1252,10 @@ def main():
         st.dataframe(pref_ranking, use_container_width=True, hide_index=True)
 
     with rank_col2:
+        tchart = theme['chart']
         fig_rank, ax_rank = plt.subplots(figsize=(10, 8))
+        fig_rank.patch.set_facecolor(tchart['figure_facecolor'])
+        ax_rank.set_facecolor(tchart['axes_facecolor'])
 
         _fp = get_available_chinese_font()
         font_prop = FontProperties(fname=_fp, size=10) if _fp else FontProperties(family='SimHei', size=10)
@@ -1176,12 +1263,12 @@ def main():
         font_label = FontProperties(fname=_fp, size=12, weight='bold') if _fp else FontProperties(family='SimHei', size=12, weight='bold')
         font_text = FontProperties(fname=_fp, size=10, weight='bold') if _fp else FontProperties(family='SimHei', size=10, weight='bold')
 
-        colors = sns.color_palette("YlOrRd_r", len(pref_ranking))
+        colors = sns.color_palette(tchart['palette_ranking'], len(pref_ranking))
         bars = ax_rank.barh(
             pref_ranking['标签'][::-1],
             pref_ranking['权重'][::-1],
             color=colors,
-            edgecolor='white',
+            edgecolor=tchart['axes_facecolor'],
             linewidth=1.5
         )
 
@@ -1192,23 +1279,27 @@ def main():
                 f'{pct:.1f}%',
                 va='center',
                 fontproperties=font_text,
-                color='#2C3E50'
+                color=tchart['text_color']
             )
 
-        ax_rank.set_xlabel('权重', fontproperties=font_label)
-        ax_rank.set_ylabel('标签', fontproperties=font_label)
+        ax_rank.set_xlabel('权重', fontproperties=font_label, color=tchart['label_color'])
+        ax_rank.set_ylabel('标签', fontproperties=font_label, color=tchart['label_color'])
         ax_rank.set_title(
             f'{PREFERENCE_TYPES[selected_pref_type]}权重分布',
             fontproperties=font_title,
-            pad=15
+            pad=15,
+            color=tchart['text_color']
         )
 
         for label in ax_rank.get_xticklabels() + ax_rank.get_yticklabels():
             label.set_fontproperties(font_prop)
+            label.set_color(tchart['tick_color'])
 
         ax_rank.spines['top'].set_visible(False)
         ax_rank.spines['right'].set_visible(False)
-        ax_rank.xaxis.grid(True, alpha=0.3, linestyle='--')
+        ax_rank.spines['left'].set_color(tchart['grid_color'])
+        ax_rank.spines['bottom'].set_color(tchart['grid_color'])
+        ax_rank.xaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
         ax_rank.set_axisbelow(True)
 
         plt.tight_layout()
@@ -1286,8 +1377,8 @@ def main():
     
     st.markdown("---")
     st.markdown(
-        """
-        <div style='text-align: center; color: #7f8c8d; padding: 20px;'>
+        f"""
+        <div style='text-align: center; color: {tc['secondary_text']}; padding: 20px;'>
             <p>💡 用户画像分析系统 | 基于 Streamlit 与 Matplotlib 构建</p>
             <p>数据为模拟生成，仅用于演示目的</p>
         </div>
