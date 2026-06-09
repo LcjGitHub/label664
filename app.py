@@ -108,11 +108,13 @@ def generate_mock_data(n_samples=3000):
         p=[0.52, 0.48]
     )
     
-    ages = np.random.normal(loc=32, scale=10, size=n_samples)
-    ages = np.clip(ages, 18, 65).astype(int)
+    ages = np.random.normal(loc=32, scale=12, size=n_samples)
+    ages = np.clip(ages, 15, 70).astype(int)
     
     def get_age_group(age):
-        if age < 25:
+        if age < 18:
+            return '18以下'
+        elif age < 25:
             return '18-24'
         elif age < 35:
             return '25-34'
@@ -120,8 +122,10 @@ def generate_mock_data(n_samples=3000):
             return '35-44'
         elif age < 55:
             return '45-54'
+        elif age < 65:
+            return '55-64'
         else:
-            return '55+'
+            return '65+'
     
     def get_generation(age):
         current_year = 2026
@@ -250,7 +254,7 @@ def create_age_gender_chart(df, theme=None):
     font_text = FontProperties(family='SimHei', size=9, weight='bold')
     font_legend = FontProperties(family='SimHei', size=11)
 
-    age_order = ['18-24', '25-34', '35-44', '45-54', '55+']
+    age_order = ['18以下', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']
 
     age_gender_data = df.groupby(['age_group', 'gender']).size().unstack(fill_value=0)
     age_gender_data = age_gender_data.reindex(age_order)
@@ -1304,6 +1308,12 @@ def main():
     if selected_segment:
         df_filtered = df_filtered[df_filtered['user_segment'].isin(selected_segment)]
 
+    df_gen_charts = df_filtered.copy()
+
+    df_gen_charts = df_gen_charts[df_gen_charts['login_frequency'] >= min_login_freq]
+    df_gen_charts = df_gen_charts[df_gen_charts['purchase_count'] >= min_purchase]
+    df_gen_charts = df_gen_charts[df_gen_charts['online_hours'] >= min_online_hours]
+
     if selected_generation:
         df_filtered = df_filtered[df_filtered['generation'].isin(selected_generation)]
 
@@ -1703,9 +1713,10 @@ def main():
     st.markdown("---")
 
     st.subheader("👶 代际分析")
-    st.markdown("#### 代际分组说明：00后(17-26岁)、90后(27-36岁)、80后(37-46岁)、70后(47-56岁)、60后(57-66岁)")
+    st.markdown("#### 代际分组说明：00后(17-26岁)、90后(27-36岁)、80后(37-46岁)、70后(47-56岁)、60后(57-66岁)、其他(16岁及以下或67岁及以上)")
+    st.caption("💡 代际概览卡片、饼图、消费偏好对比、兴趣标签关系和代际统计摘要始终展示全量代际对比数据，不受侧边栏代际筛选影响；代际详细画像区域受代际筛选影响。")
     
-    df_gen_view = df_filtered if len(df_filtered) > 0 else df_full
+    df_gen_view = df_gen_charts if len(df_gen_charts) > 0 else df_full
 
     gen_col1, gen_col2, gen_col3, gen_col4, gen_col5, gen_col6 = st.columns(6)
     gen_display = GENERATION_ORDER
@@ -2202,7 +2213,7 @@ def main():
     
     with summary_col2:
         st.markdown("### 年龄段统计")
-        age_summary = df_filtered['age_group'].value_counts().reindex(['18-24', '25-34', '35-44', '45-54', '55+']).reset_index()
+        age_summary = df_filtered['age_group'].value_counts().reindex(['18以下', '18-24', '25-34', '35-44', '45-54', '55-64', '65+']).reset_index()
         age_summary.columns = ['年龄段', '用户数']
         age_summary['占比'] = (age_summary['用户数'] / len(df_filtered) * 100).round(2).astype(str) + '%'
         st.dataframe(age_summary, use_container_width=True, hide_index=True)
