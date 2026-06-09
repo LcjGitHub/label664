@@ -18,6 +18,12 @@ from user_behavior import (
     segment_users,
     get_segment_summary
 )
+from utils import (
+    export_data,
+    generate_export_filename,
+    get_data_statistics,
+    get_export_mime_type
+)
 
 warnings.filterwarnings('ignore')
 
@@ -518,7 +524,20 @@ def main():
     )
     
     show_data = st.sidebar.checkbox("显示原始数据", value=False)
-    
+
+    st.sidebar.subheader("📥 数据导出")
+    export_format = st.sidebar.selectbox(
+        "选择导出格式",
+        options=["CSV", "Excel"],
+        index=0,
+        help="选择要导出的数据格式"
+    )
+    export_clicked = st.sidebar.button(
+        "📤 导出数据",
+        use_container_width=True,
+        help="根据当前筛选条件导出数据"
+    )
+
     df_profile = generate_mock_data(n_samples)
     df_behavior = generate_behavior_data(df_profile['user_id'].tolist())
     df_behavior = calculate_behavior_scores(df_behavior)
@@ -539,6 +558,93 @@ def main():
     df_filtered = df_filtered[df_filtered['online_hours'] >= min_online_hours]
     
     df_full = df
+
+    if export_clicked:
+        if len(df_filtered) == 0:
+            st.warning("⚠️ 当前筛选条件下没有数据可导出，请调整筛选条件后重试。")
+        else:
+            try:
+                export_format_ext = 'csv' if export_format == 'CSV' else 'xlsx'
+                export_df = df_filtered.copy()
+                
+                display_cols = [
+                    'user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type',
+                    'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
+                    'total_spent', 'last_active_days', 'page_views', 'click_count',
+                    'login_score', 'online_score', 'purchase_score', 'spent_score',
+                    'activity_score', 'behavior_score'
+                ]
+                available_cols = [col for col in display_cols if col in export_df.columns]
+                export_df = export_df[available_cols]
+                
+                exported_data = export_data(export_df, export_format_ext)
+                filename = generate_export_filename(export_format_ext)
+                mime_type = get_export_mime_type(export_format_ext)
+                stats = get_data_statistics(export_df)
+                file_size_kb = round(len(exported_data) / 1024, 2)
+
+                st.success("✅ 数据导出成功！")
+                
+                export_container = st.container()
+                with export_container:
+                    st.markdown("### 📦 导出文件信息")
+                    st.markdown("---")
+                    
+                    st.download_button(
+                        label=f"⬇️ 下载 {filename}",
+                        data=exported_data,
+                        file_name=filename,
+                        mime=mime_type,
+                        use_container_width=True,
+                        key="download_export_button"
+                    )
+                    
+                    st.markdown("#### 📊 导出数据统计")
+                    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+                    with stat_col1:
+                        st.metric("记录数", f"{stats['total_records']:,}")
+                    with stat_col2:
+                        st.metric("字段数", f"{stats['total_columns']}")
+                    with stat_col3:
+                        st.metric("文件大小", f"{file_size_kb} KB")
+                    with stat_col4:
+                        st.metric("导出格式", export_format)
+                    
+                    st.markdown("---")
+                    detail_col1, detail_col2 = st.columns(2)
+                    
+                    with detail_col1:
+                        st.markdown("##### 🎯 用户群体分布")
+                        if stats['segment_distribution']:
+                            for seg, cnt in stats['segment_distribution'].items():
+                                pct = round(cnt / stats['total_records'] * 100, 1)
+                                st.markdown(f"- **{seg}**: {cnt:,} 人 ({pct}%)")
+                        else:
+                            st.markdown("- 无分群数据")
+                    
+                    with detail_col2:
+                        st.markdown("##### 📈 关键指标")
+                        if stats['age_range']:
+                            st.markdown(f"- **年龄范围**: {stats['age_range']['min']} - {stats['age_range']['max']} 岁 (平均: {stats['age_range']['mean']}岁)")
+                        if stats['province_count']:
+                            st.markdown(f"- **覆盖省份**: {stats['province_count']} 个")
+                        if stats['total_revenue']:
+                            st.markdown(f"- **总消费金额**: ¥{stats['total_revenue']:,.2f}")
+                        if stats['avg_behavior_score']:
+                            st.markdown(f"- **平均行为得分**: {stats['avg_behavior_score']}")
+                        
+                        st.markdown("##### 👥 性别分布")
+                        if stats['gender_distribution']:
+                            for gender, cnt in stats['gender_distribution'].items():
+                                pct = round(cnt / stats['total_records'] * 100, 1)
+                                st.markdown(f"- **{gender}**: {cnt:,} 人 ({pct}%)")
+                    
+                st.markdown("---")
+                
+            except Exception as e:
+                st.error(f"❌ 导出失败: {str(e)}")
+                if export_format == 'Excel' and 'openpyxl' in str(e).lower():
+                    st.info("💡 提示: Excel 导出需要安装 openpyxl 库，请运行 `pip install openpyxl` 安装后重试。")
     
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
