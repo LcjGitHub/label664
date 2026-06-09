@@ -78,7 +78,9 @@ from utils import (
     export_data,
     generate_export_filename,
     get_data_statistics,
-    get_export_mime_type
+    get_export_mime_type,
+    generate_pdf_report,
+    AVAILABLE_PDF_CHARTS
 )
 
 warnings.filterwarnings('ignore')
@@ -1764,15 +1766,32 @@ def main():
     st.sidebar.subheader("📥 数据导出")
     export_format = st.sidebar.selectbox(
         "选择导出格式",
-        options=["CSV", "Excel"],
+        options=["CSV", "Excel", "PDF"],
         index=0,
         help="选择要导出的数据格式"
     )
+
+    if export_format == "PDF":
+        st.sidebar.markdown("#### 📊 PDF 报告配置")
+        pdf_chart_options = [opt[0] for opt in AVAILABLE_PDF_CHARTS]
+        pdf_chart_labels = [opt[1] for opt in AVAILABLE_PDF_CHARTS]
+        selected_pdf_charts = st.sidebar.multiselect(
+            "选择包含的图表",
+            options=pdf_chart_options,
+            default=pdf_chart_options,
+            format_func=lambda x: pdf_chart_labels[pdf_chart_options.index(x)],
+            help="选择要在 PDF 报告中包含的图表类型"
+        )
+        if not selected_pdf_charts:
+            st.sidebar.warning("⚠️ 请至少选择一个图表")
+    else:
+        selected_pdf_charts = []
+
     export_scope = st.sidebar.selectbox(
         "导出范围",
         options=["用户明细数据", "省份级别汇总", "城市级别汇总"],
         index=0,
-        help="选择要导出的数据范围：用户明细、省份汇总或城市汇总"
+        help="选择要导出的数据范围：用户明细、省份汇总或城市汇总（PDF 格式忽略此选项）"
     )
     export_clicked = st.sidebar.button(
         "📤 导出数据",
@@ -1829,78 +1848,105 @@ def main():
     if export_clicked:
         if len(df_filtered) == 0:
             st.warning("⚠️ 当前筛选条件下没有数据可导出，请调整筛选条件后重试。")
+        elif export_format == "PDF" and not selected_pdf_charts:
+            st.warning("⚠️ 请至少选择一个要包含在 PDF 报告中的图表。")
         else:
             try:
-                export_format_ext = 'csv' if export_format == 'CSV' else 'xlsx'
-                
-                if export_scope == "城市级别汇总":
-                    export_df = df_filtered.groupby(['province', 'city', 'city_type'], observed=True).agg({
-                        'user_id': 'count',
-                        'total_spent': ['sum', 'mean'],
-                        'behavior_score': 'mean',
-                        'login_frequency': 'mean',
-                        'online_hours': 'mean',
-                        'purchase_count': 'mean'
-                    }).round(2)
-                    export_df.columns = [
-                        '用户数量', '总消费金额', '平均消费金额',
-                        '平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数'
-                    ]
-                    export_df = export_df.reset_index()
-                    export_df = export_df.rename(columns={
-                        'province': '省份', 'city': '城市', 'city_type': '城市类型'
-                    })
-                    total_users_city = export_df['用户数量'].sum()
-                    export_df['用户占比(%)'] = (export_df['用户数量'] / total_users_city * 100).round(2)
-                    export_df = export_df.sort_values(['省份', '用户数量'], ascending=[True, False]).reset_index(drop=True)
-                    export_df.insert(0, '序号', range(1, len(export_df) + 1))
-                    export_prefix = "city_level_summary"
+                if export_format == "PDF":
+                    filter_summary = {
+                        'n_samples': n_samples,
+                        'selected_province': selected_province,
+                        'selected_segment': selected_segment,
+                        'selected_generation': selected_generation,
+                        'min_login_freq': min_login_freq,
+                        'min_purchase': min_purchase,
+                        'min_online_hours': min_online_hours,
+                    }
                     
-                elif export_scope == "省份级别汇总":
-                    export_df = df_filtered.groupby(['province', 'region_type'], observed=True).agg({
-                        'user_id': 'count',
-                        'city': 'nunique',
-                        'total_spent': ['sum', 'mean'],
-                        'behavior_score': 'mean',
-                        'login_frequency': 'mean',
-                        'online_hours': 'mean',
-                        'purchase_count': 'mean'
-                    }).round(2)
-                    export_df.columns = [
-                        '用户数量', '覆盖城市数', '总消费金额', '平均消费金额',
-                        '平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数'
-                    ]
-                    export_df = export_df.reset_index()
-                    export_df = export_df.rename(columns={
-                        'province': '省份', 'region_type': '地域类型'
-                    })
-                    total_users_prov = export_df['用户数量'].sum()
-                    export_df['用户占比(%)'] = (export_df['用户数量'] / total_users_prov * 100).round(2)
-                    export_df = export_df.sort_values('用户数量', ascending=False).reset_index(drop=True)
-                    export_df.insert(0, '排名', range(1, len(export_df) + 1))
-                    export_prefix = "province_level_summary"
-                    
+                    exported_data = generate_pdf_report(
+                        df=df_filtered,
+                        theme=theme,
+                        selected_charts=selected_pdf_charts,
+                        filter_summary=filter_summary
+                    )
+                    filename = generate_export_filename('pdf', prefix="user_profile_report")
+                    mime_type = get_export_mime_type('pdf')
+                    stats = get_data_statistics(df_filtered)
+                    file_size_kb = round(len(exported_data) / 1024, 2)
+                    export_prefix = "user_profile_report"
+                    export_scope_for_result = "PDF分析报告"
                 else:
-                    export_df = df_filtered.copy()
-                    display_cols = [
-                        'user_id', 'gender', 'age', 'age_group', 'generation', 'province', 'city', 'region_type', 'city_type',
-                        'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
-                        'total_spent', 'last_active_days', 'page_views', 'click_count',
-                        'login_score', 'online_score', 'purchase_score', 'spent_score',
-                        'activity_score', 'behavior_score',
-                        'top_interest', 'top_consumption', 'top_channel',
-                        'interest_concentration', 'consumption_concentration', 'channel_concentration'
-                    ]
-                    available_cols = [col for col in display_cols if col in export_df.columns]
-                    export_df = export_df[available_cols]
-                    export_prefix = "user_profile_data"
-                
-                exported_data = export_data(export_df, export_format_ext, export_scope)
-                filename = generate_export_filename(export_format_ext, prefix=export_prefix)
-                mime_type = get_export_mime_type(export_format_ext)
-                stats = get_data_statistics(export_df)
-                file_size_kb = round(len(exported_data) / 1024, 2)
-                
+                    export_format_ext = 'csv' if export_format == 'CSV' else 'xlsx'
+                    
+                    if export_scope == "城市级别汇总":
+                        export_df = df_filtered.groupby(['province', 'city', 'city_type'], observed=True).agg({
+                            'user_id': 'count',
+                            'total_spent': ['sum', 'mean'],
+                            'behavior_score': 'mean',
+                            'login_frequency': 'mean',
+                            'online_hours': 'mean',
+                            'purchase_count': 'mean'
+                        }).round(2)
+                        export_df.columns = [
+                            '用户数量', '总消费金额', '平均消费金额',
+                            '平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数'
+                        ]
+                        export_df = export_df.reset_index()
+                        export_df = export_df.rename(columns={
+                            'province': '省份', 'city': '城市', 'city_type': '城市类型'
+                        })
+                        total_users_city = export_df['用户数量'].sum()
+                        export_df['用户占比(%)'] = (export_df['用户数量'] / total_users_city * 100).round(2)
+                        export_df = export_df.sort_values(['省份', '用户数量'], ascending=[True, False]).reset_index(drop=True)
+                        export_df.insert(0, '序号', range(1, len(export_df) + 1))
+                        export_prefix = "city_level_summary"
+                        
+                    elif export_scope == "省份级别汇总":
+                        export_df = df_filtered.groupby(['province', 'region_type'], observed=True).agg({
+                            'user_id': 'count',
+                            'city': 'nunique',
+                            'total_spent': ['sum', 'mean'],
+                            'behavior_score': 'mean',
+                            'login_frequency': 'mean',
+                            'online_hours': 'mean',
+                            'purchase_count': 'mean'
+                        }).round(2)
+                        export_df.columns = [
+                            '用户数量', '覆盖城市数', '总消费金额', '平均消费金额',
+                            '平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数'
+                        ]
+                        export_df = export_df.reset_index()
+                        export_df = export_df.rename(columns={
+                            'province': '省份', 'region_type': '地域类型'
+                        })
+                        total_users_prov = export_df['用户数量'].sum()
+                        export_df['用户占比(%)'] = (export_df['用户数量'] / total_users_prov * 100).round(2)
+                        export_df = export_df.sort_values('用户数量', ascending=False).reset_index(drop=True)
+                        export_df.insert(0, '排名', range(1, len(export_df) + 1))
+                        export_prefix = "province_level_summary"
+                        
+                    else:
+                        export_df = df_filtered.copy()
+                        display_cols = [
+                            'user_id', 'gender', 'age', 'age_group', 'generation', 'province', 'city', 'region_type', 'city_type',
+                            'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
+                            'total_spent', 'last_active_days', 'page_views', 'click_count',
+                            'login_score', 'online_score', 'purchase_score', 'spent_score',
+                            'activity_score', 'behavior_score',
+                            'top_interest', 'top_consumption', 'top_channel',
+                            'interest_concentration', 'consumption_concentration', 'channel_concentration'
+                        ]
+                        available_cols = [col for col in display_cols if col in export_df.columns]
+                        export_df = export_df[available_cols]
+                        export_prefix = "user_profile_data"
+                    
+                    exported_data = export_data(export_df, export_format_ext, export_scope)
+                    filename = generate_export_filename(export_format_ext, prefix=export_prefix)
+                    mime_type = get_export_mime_type(export_format_ext)
+                    stats = get_data_statistics(export_df)
+                    file_size_kb = round(len(exported_data) / 1024, 2)
+                    export_scope_for_result = export_scope
+
                 filter_summary = {
                     'n_samples': n_samples,
                     'selected_province': selected_province,
@@ -1909,20 +1955,25 @@ def main():
                     'min_login_freq': min_login_freq,
                     'min_purchase': min_purchase,
                     'min_online_hours': min_online_hours,
-                    'export_scope': export_scope
+                    'export_scope': export_scope_for_result
                 }
 
-                st.session_state.export_result = {
+                export_result_data = {
                     'exported_data': exported_data,
                     'filename': filename,
                     'mime_type': mime_type,
                     'stats': stats,
                     'file_size_kb': file_size_kb,
                     'export_format': export_format,
-                    'export_scope': export_scope,
+                    'export_scope': export_scope_for_result,
                     'filter_summary': filter_summary,
                     'success': True
                 }
+
+                if export_format == "PDF":
+                    export_result_data['selected_pdf_charts'] = selected_pdf_charts
+
+                st.session_state.export_result = export_result_data
 
             except Exception as e:
                 st.session_state.export_result = {
@@ -1937,8 +1988,11 @@ def main():
             st.error(f"❌ 导出失败: {result.get('error', '未知错误')}")
             if result.get('export_format') == 'Excel' and 'openpyxl' in result.get('error', '').lower():
                 st.info("💡 提示: Excel 导出需要安装 openpyxl 库，请运行 `pip install openpyxl` 安装后重试。")
+            elif result.get('export_format') == 'PDF' and 'reportlab' in result.get('error', '').lower():
+                st.info("💡 提示: PDF 导出需要安装 reportlab 库，请运行 `pip install reportlab>=4.0.0` 安装后重试。")
         else:
-            st.success("✅ 数据导出成功！")
+            is_pdf = result.get('export_format') == 'PDF'
+            st.success(f"✅ {'PDF 报告' if is_pdf else '数据'}导出成功！")
             
             export_container = st.container()
             with export_container:
@@ -1973,20 +2027,31 @@ def main():
                 with filter_col4:
                     st.markdown(f"- **导出范围**: {fs.get('export_scope', '用户明细数据')}")
                 
+                if is_pdf and result.get('selected_pdf_charts'):
+                    st.markdown("#### 📊 PDF 报告包含图表")
+                    chart_names = {opt[0]: opt[1] for opt in AVAILABLE_PDF_CHARTS}
+                    selected_chart_names = [chart_names.get(c, c) for c in result['selected_pdf_charts']]
+                    st.markdown("、".join([f"**{n}**" for n in selected_chart_names]))
+                
                 st.markdown("---")
                 st.markdown("#### 📊 导出数据统计")
                 stat_scope = result.get('export_scope', '用户明细数据')
                 
                 stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
                 with stat_col1:
-                    if stat_scope == "城市级别汇总":
+                    if is_pdf:
+                        st.metric("报告覆盖用户", f"{result['stats']['total_records']:,}")
+                    elif stat_scope == "城市级别汇总":
                         st.metric("城市数", f"{result['stats']['total_records']:,}")
                     elif stat_scope == "省份级别汇总":
                         st.metric("省份记录数", f"{result['stats']['total_records']:,}")
                     else:
                         st.metric("用户数", f"{result['stats']['total_records']:,}")
                 with stat_col2:
-                    st.metric("字段数", f"{result['stats']['total_columns']}")
+                    if is_pdf:
+                        st.metric("图表数量", f"{len(result.get('selected_pdf_charts', []))}")
+                    else:
+                        st.metric("字段数", f"{result['stats']['total_columns']}")
                 with stat_col3:
                     st.metric("文件大小", f"{result['file_size_kb']} KB")
                 with stat_col4:
@@ -1996,7 +2061,17 @@ def main():
                 detail_col1, detail_col2 = st.columns(2)
                 
                 with detail_col1:
-                    if stat_scope in ["城市级别汇总", "省份级别汇总"]:
+                    if is_pdf:
+                        st.markdown("##### 📑 PDF 报告内容")
+                        st.markdown("- **页面标题与生成时间**")
+                        st.markdown("- **关键指标摘要卡片**（总用户数、性别、年龄、省份等）")
+                        st.markdown("- **主要图表**（根据选择包含）")
+                        st.markdown("- **数据摘要表格**（性别、年龄、行为分群、省份分布）")
+                        if result['stats'].get('total_revenue'):
+                            st.markdown(f"- **总消费金额**: ¥{result['stats']['total_revenue']:,.2f}")
+                        if result['stats'].get('avg_behavior_score'):
+                            st.markdown(f"- **平均行为得分**: {result['stats']['avg_behavior_score']}")
+                    elif stat_scope in ["城市级别汇总", "省份级别汇总"]:
                         st.markdown("##### 🏙️ 汇总覆盖范围")
                         if result['stats'].get('province_count'):
                             st.markdown(f"- **覆盖省份**: {result['stats']['province_count']} 个")
@@ -2017,7 +2092,15 @@ def main():
                             st.markdown("- 无分群数据")
                 
                 with detail_col2:
-                    if stat_scope in ["城市级别汇总", "省份级别汇总"]:
+                    if is_pdf:
+                        st.markdown("##### 🎨 主题适配")
+                        st.markdown(f"- **当前主题**: {theme.get('name', '亮色')} {theme.get('icon', '')}")
+                        st.markdown("- PDF 报告颜色已适配当前主题")
+                        if result['stats']['age_range']:
+                            st.markdown(f"- **年龄范围**: {result['stats']['age_range']['min']} - {result['stats']['age_range']['max']} 岁 (平均: {result['stats']['age_range']['mean']}岁)")
+                        if result['stats']['province_count']:
+                            st.markdown(f"- **覆盖省份**: {result['stats']['province_count']} 个")
+                    elif stat_scope in ["城市级别汇总", "省份级别汇总"]:
                         st.markdown("##### 📋 汇总说明")
                         if stat_scope == "城市级别汇总":
                             st.markdown("- 每条记录代表一个城市的汇总数据")

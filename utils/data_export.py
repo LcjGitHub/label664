@@ -226,5 +226,7 @@ def get_export_mime_type(export_format):
         return 'text/csv'
     elif export_format.lower() in ['excel', 'xlsx', 'xls']:
         return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    elif export_format.lower() == 'pdf':
+        return 'application/pdf'
     else:
         return 'application/octet-stream'
