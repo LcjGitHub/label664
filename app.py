@@ -4,6 +4,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
+from wordcloud import WordCloud
 import warnings
 from region_data import (
     PROVINCE_CITY_MAP,
@@ -17,6 +18,15 @@ from user_behavior import (
     calculate_behavior_scores,
     segment_users,
     get_segment_summary
+)
+from user_preferences import (
+    generate_preference_data,
+    get_preference_ranking,
+    get_concentration_stats,
+    get_gender_preference_comparison,
+    get_preference_wordcloud_data,
+    PREFERENCE_TYPES,
+    TAG_CATEGORIES
 )
 from utils import (
     export_data,
@@ -467,6 +477,103 @@ def create_segment_comparison_chart(df):
     return fig
 
 
+def create_preference_wordcloud(df, pref_type):
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    font_prop = FontProperties(family='SimHei', size=14, weight='bold')
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+
+    word_freq = get_preference_wordcloud_data(df, pref_type)
+
+    wc = WordCloud(
+        font_path='C:/Windows/Fonts/simhei.ttf',
+        width=800,
+        height=500,
+        background_color='white',
+        colormap='viridis',
+        max_words=100,
+        prefer_horizontal=0.9,
+        min_font_size=10,
+        max_font_size=100,
+        margin=10,
+        random_state=42
+    )
+
+    if word_freq:
+        wc.generate_from_frequencies(word_freq)
+        ax.imshow(wc, interpolation='bilinear')
+    else:
+        ax.text(0.5, 0.5, '暂无数据', fontproperties=font_prop,
+                ha='center', va='center', transform=ax.transAxes)
+
+    ax.axis('off')
+    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}词云', fontproperties=font_title, pad=20)
+
+    plt.tight_layout()
+    return fig
+
+
+def create_gender_preference_chart(df_with_gender, pref_type, top_n=8):
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    font_prop = FontProperties(family='SimHei', size=11)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(family='SimHei', size=10, weight='bold')
+    font_legend = FontProperties(family='SimHei', size=11)
+
+    comp_df = get_gender_preference_comparison(df_with_gender, pref_type, top_n=top_n)
+
+    if comp_df.empty:
+        ax.text(0.5, 0.5, '暂无数据', fontproperties=font_prop,
+                ha='center', va='center', transform=ax.transAxes)
+        ax.axis('off')
+        ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比', fontproperties=font_title, pad=20)
+        plt.tight_layout()
+        return fig
+
+    y = np.arange(len(comp_df))
+    width = 0.35
+
+    male_values = comp_df['男'].values
+    female_values = comp_df['女'].values
+    labels = comp_df['标签'].values
+
+    bars1 = ax.barh(y - width/2, male_values, width,
+                    label='男', color='#3498DB', edgecolor='white', linewidth=1.5)
+    bars2 = ax.barh(y + width/2, female_values, width,
+                    label='女', color='#E74C3C', edgecolor='white', linewidth=1.5)
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontproperties=font_prop)
+    ax.set_xlabel('偏好占比 (%)', fontproperties=font_label)
+    ax.set_title(f'{PREFERENCE_TYPES[pref_type]}性别对比 TOP{top_n}', fontproperties=font_title, pad=20)
+    ax.legend(prop=font_legend, frameon=True, shadow=True)
+
+    for bar in bars1:
+        w = bar.get_width()
+        if w > 0:
+            ax.text(w + 0.1, bar.get_y() + bar.get_height()/2,
+                    f'{w:.1f}%', va='center', fontproperties=font_text, color='#2C3E50')
+
+    for bar in bars2:
+        w = bar.get_width()
+        if w > 0:
+            ax.text(w + 0.1, bar.get_y() + bar.get_height()/2,
+                    f'{w:.1f}%', va='center', fontproperties=font_text, color='#2C3E50')
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.xaxis.grid(True, alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
 def main():
     if 'export_result' not in st.session_state:
         st.session_state.export_result = None
@@ -525,6 +632,33 @@ def main():
         value=0.0,
         step=1.0
     )
+
+    st.sidebar.subheader("🎨 偏好分析")
+    pref_type_options = list(PREFERENCE_TYPES.keys())
+    pref_type_labels = list(PREFERENCE_TYPES.values())
+    selected_pref_type = st.sidebar.selectbox(
+        "选择偏好类型",
+        options=pref_type_options,
+        format_func=lambda x: PREFERENCE_TYPES[x],
+        index=0,
+        help="选择要查看的偏好维度：兴趣标签、消费偏好或渠道偏好"
+    )
+    gender_compare_top_n = st.sidebar.slider(
+        "性别对比显示数量",
+        min_value=3,
+        max_value=15,
+        value=8,
+        step=1,
+        help="性别偏好对比图中显示的标签数量"
+    )
+    ranking_top_n = st.sidebar.slider(
+        "偏好排名显示数量",
+        min_value=3,
+        max_value=20,
+        value=10,
+        step=1,
+        help="热门偏好标签排名显示的数量"
+    )
     
     show_data = st.sidebar.checkbox("显示原始数据", value=False)
 
@@ -545,8 +679,10 @@ def main():
     df_behavior = generate_behavior_data(df_profile['user_id'].tolist())
     df_behavior = calculate_behavior_scores(df_behavior)
     df_behavior = segment_users(df_behavior)
+    df_preferences = generate_preference_data(df_profile['user_id'].tolist())
     
     df = df_profile.merge(df_behavior, on='user_id', how='left')
+    df = df.merge(df_preferences, on='user_id', how='left')
     
     df_filtered = df.copy()
     
@@ -895,9 +1031,153 @@ def main():
     st.subheader("📋 行为分群统计摘要")
     segment_summary = get_segment_summary(df_filtered if len(df_filtered) > 0 else df_full)
     st.dataframe(segment_summary, use_container_width=True, hide_index=True)
-    
+
     st.markdown("---")
-    
+
+    st.subheader("🎨 用户偏好分析")
+
+    df_pref_view = df_filtered if len(df_filtered) > 0 else df_full
+
+    pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+    concentration = get_concentration_stats(df_pref_view)
+
+    with pcol1:
+        st.metric(
+            label="兴趣偏好集中度",
+            value=f"{concentration['interest_mean']:.1f}%",
+            delta=f"±{concentration['interest_std']:.1f}%"
+        )
+
+    with pcol2:
+        st.metric(
+            label="消费偏好集中度",
+            value=f"{concentration['consumption_mean']:.1f}%",
+            delta=f"±{concentration['consumption_std']:.1f}%"
+        )
+
+    with pcol3:
+        st.metric(
+            label="渠道偏好集中度",
+            value=f"{concentration['channel_mean']:.1f}%",
+            delta=f"±{concentration['channel_std']:.1f}%"
+        )
+
+    top_interest_tag = get_preference_ranking(df_pref_view, 'interest', top_n=1)
+    with pcol4:
+        if len(top_interest_tag) > 0:
+            st.metric(
+                label="热门兴趣标签",
+                value=top_interest_tag.iloc[0]['标签'],
+                delta=f"占比 {top_interest_tag.iloc[0]['占比']:.1f}%"
+            )
+
+    pref_info_col1, pref_info_col2 = st.columns(2)
+    with pref_info_col1:
+        st.info(
+            f"📊 当前分析维度: **{PREFERENCE_TYPES[selected_pref_type]}**\n\n"
+            f"共 {len(TAG_CATEGORIES[selected_pref_type])} 个可选标签\n\n"
+            f"偏好集中度表示用户 Top3 偏好权重之和的平均值，越高说明用户偏好越集中"
+        )
+    with pref_info_col2:
+        st.success(
+            f"🏆 热门 {PREFERENCE_TYPES[selected_pref_type]} TOP3:\n\n"
+            + "\n".join([
+                f"{i+1}. {row['标签']} ({row['占比']:.1f}%)"
+                for i, row in get_preference_ranking(df_pref_view, selected_pref_type, top_n=3).iterrows()
+            ])
+        )
+
+    st.markdown("---")
+
+    pref_col1, pref_col2 = st.columns(2)
+
+    with pref_col1:
+        st.subheader(f"☁️ {PREFERENCE_TYPES[selected_pref_type]}词云")
+        wordcloud_fig = create_preference_wordcloud(df_pref_view, selected_pref_type)
+        st.pyplot(wordcloud_fig, use_container_width=True)
+
+    with pref_col2:
+        st.subheader(f"👫 性别{PREFERENCE_TYPES[selected_pref_type]}对比")
+        gender_pref_fig = create_gender_preference_chart(
+            df_pref_view, selected_pref_type, top_n=gender_compare_top_n
+        )
+        st.pyplot(gender_pref_fig, use_container_width=True)
+
+    st.markdown("---")
+
+    st.subheader(f"🏆 热门{PREFERENCE_TYPES[selected_pref_type]}排名 TOP{ranking_top_n}")
+    pref_ranking = get_preference_ranking(df_pref_view, selected_pref_type, top_n=ranking_top_n)
+
+    rank_col1, rank_col2 = st.columns([2, 3])
+
+    with rank_col1:
+        st.dataframe(pref_ranking, use_container_width=True, hide_index=True)
+
+    with rank_col2:
+        fig_rank, ax_rank = plt.subplots(figsize=(10, 8))
+
+        font_prop = FontProperties(family='SimHei', size=10)
+        font_title = FontProperties(family='SimHei', size=14, weight='bold')
+        font_label = FontProperties(family='SimHei', size=12, weight='bold')
+        font_text = FontProperties(family='SimHei', size=10, weight='bold')
+
+        colors = sns.color_palette("YlOrRd_r", len(pref_ranking))
+        bars = ax_rank.barh(
+            pref_ranking['标签'][::-1],
+            pref_ranking['权重'][::-1],
+            color=colors,
+            edgecolor='white',
+            linewidth=1.5
+        )
+
+        total_weight = pref_ranking['权重'].sum()
+        for bar, pct in zip(bars, pref_ranking['占比'][::-1].values):
+            ax_rank.text(
+                bar.get_width() + pref_ranking['权重'].max() * 0.01,
+                bar.get_y() + bar.get_height() / 2,
+                f'{pct:.1f}%',
+                va='center',
+                fontproperties=font_text,
+                color='#2C3E50'
+            )
+
+        ax_rank.set_xlabel('权重', fontproperties=font_label)
+        ax_rank.set_ylabel('标签', fontproperties=font_label)
+        ax_rank.set_title(
+            f'{PREFERENCE_TYPES[selected_pref_type]}权重分布',
+            fontproperties=font_title,
+            pad=15
+        )
+
+        for label in ax_rank.get_xticklabels() + ax_rank.get_yticklabels():
+            label.set_fontproperties(font_prop)
+
+        ax_rank.spines['top'].set_visible(False)
+        ax_rank.spines['right'].set_visible(False)
+        ax_rank.xaxis.grid(True, alpha=0.3, linestyle='--')
+        ax_rank.set_axisbelow(True)
+
+        plt.tight_layout()
+        st.pyplot(fig_rank, use_container_width=True)
+
+    st.markdown("---")
+
+    st.subheader("📊 三类偏好对比统计")
+    compare_col1, compare_col2, compare_col3 = st.columns(3)
+
+    pref_type_list = ['interest', 'consumption', 'channel']
+    pref_col_list = [compare_col1, compare_col2, compare_col3]
+
+    for pt, pc in zip(pref_type_list, pref_col_list):
+        with pc:
+            st.markdown(f"##### 🔝 {PREFERENCE_TYPES[pt]} TOP5")
+            top5 = get_preference_ranking(df_pref_view, pt, top_n=5)
+            display_top5 = top5[['排名', '标签', '占比']].copy()
+            display_top5['占比'] = display_top5['占比'].astype(str) + '%'
+            st.dataframe(display_top5, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
     st.subheader("📋 数据摘要")
     
     summary_col1, summary_col2, summary_col3 = st.columns(3)
