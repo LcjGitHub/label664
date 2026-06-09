@@ -16,8 +16,7 @@ from user_behavior import (
     generate_behavior_data,
     calculate_behavior_scores,
     segment_users,
-    get_segment_summary,
-    get_behavior_stats
+    get_segment_summary
 )
 
 warnings.filterwarnings('ignore')
@@ -637,7 +636,7 @@ def main():
             avg_online = df_filtered['online_hours'].mean()
             st.metric(
                 label="平均在线时长",
-                value=f"{avg_online:.1f}h",
+                value=f"{avg_online:.1f}小时",
                 delta=None
             )
 
@@ -667,8 +666,10 @@ def main():
     segment_colors = ['#27AE60', '#3498DB', '#95A5A6']
     segment_icons = ['🔥', '👤', '💤']
 
+    df_behavior_view = df_filtered if len(df_filtered) > 0 else df_full
+
     for i, (seg, color, icon) in enumerate(zip(segment_display, segment_colors, segment_icons)):
-        seg_data = df_full[df_full['user_segment'] == seg]
+        seg_data = df_behavior_view[df_behavior_view['user_segment'] == seg]
         if len(seg_data) > 0:
             with [seg_col1, seg_col2, seg_col3][i]:
                 st.markdown(
@@ -676,7 +677,7 @@ def main():
                     <div class="metric-card" style="border-top: 4px solid {color};">
                         <h3 style="color: {color}; margin: 0 0 10px 0;">{icon} {seg}</h3>
                         <p style="font-size: 28px; font-weight: bold; color: #2C3E50; margin: 10px 0;">{len(seg_data):,} 人</p>
-                        <p style="color: #7f8c8d; margin: 5px 0;">占比: {len(seg_data)/len(df_full)*100:.1f}%</p>
+                        <p style="color: #7f8c8d; margin: 5px 0;">占比: {len(seg_data)/len(df_behavior_view)*100:.1f}%</p>
                         <hr style="margin: 15px 0;">
                         <p><strong>平均登录:</strong> {seg_data['login_frequency'].mean():.1f}次</p>
                         <p><strong>平均在线:</strong> {seg_data['online_hours'].mean():.1f}小时</p>
@@ -727,17 +728,13 @@ def main():
 
     with bcol1:
         st.subheader("🥧 用户行为分群分布")
-        behavior_pie_fig = create_behavior_pie_chart(df_full)
+        behavior_pie_fig = create_behavior_pie_chart(df_behavior_view)
         st.pyplot(behavior_pie_fig, use_container_width=True)
-        if selected_segment or selected_province != "全部" or min_login_freq > 0 or min_purchase > 0 or min_online_hours > 0:
-            st.caption("💡 该图表基于全量数据绘制，不受筛选条件影响")
 
     with bcol2:
         st.subheader("📊 行为群体关键指标对比")
-        segment_compare_fig = create_segment_comparison_chart(df_full)
+        segment_compare_fig = create_segment_comparison_chart(df_behavior_view)
         st.pyplot(segment_compare_fig, use_container_width=True)
-        if selected_segment or selected_province != "全部" or min_login_freq > 0 or min_purchase > 0 or min_online_hours > 0:
-            st.caption("💡 该图表基于全量数据绘制，不受筛选条件影响")
     
     st.markdown("---")
 

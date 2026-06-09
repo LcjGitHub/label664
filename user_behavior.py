@@ -122,7 +122,9 @@ def get_segment_summary(df):
     total_users = summary['用户数量'].sum()
     summary['占比'] = (summary['用户数量'] / total_users * 100).round(2).astype(str) + '%'
 
-    return summary.reset_index()
+    result = summary.reset_index()
+    result = result.rename(columns={'user_segment': '行为群体'})
+    return result
 
 
 def get_behavior_stats(df):
