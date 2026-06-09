@@ -11,7 +11,9 @@ from region_data import (
     PROVINCE_WEIGHTS,
     get_region_type,
     get_all_provinces,
-    get_cities_by_province
+    get_cities_by_province,
+    get_city_type,
+    get_province_capital
 )
 from user_behavior import (
     generate_behavior_data,
@@ -140,6 +142,7 @@ def generate_mock_data(n_samples=3000):
         cities.append(city)
     
     region_types = [get_region_type(p) for p in provinces]
+    city_types = [get_city_type(p, c) for p, c in zip(provinces, cities)]
     
     df = pd.DataFrame({
         'user_id': user_ids,
@@ -148,7 +151,8 @@ def generate_mock_data(n_samples=3000):
         'age_group': age_groups,
         'province': provinces,
         'city': cities,
-        'region_type': region_types
+        'region_type': region_types,
+        'city_type': city_types
     })
     
     return df
@@ -412,6 +416,171 @@ def create_region_ns_chart(df, theme=None):
 
     plt.tight_layout()
     return fig
+
+
+def create_city_distribution_chart(df, province, top_n=10, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    font_prop = FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(family='SimHei', size=10, weight='bold')
+
+    city_counts = df['city'].value_counts().head(top_n)
+
+    colors = sns.color_palette(tchart['palette_province'], len(city_counts))
+
+    bars = ax.barh(
+        city_counts.index[::-1],
+        city_counts.values[::-1],
+        color=colors,
+        edgecolor=tchart['axes_facecolor'],
+        linewidth=1.5
+    )
+
+    ax.set_xlabel('用户数量', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('城市', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title(f'{province} 城市用户分布前{top_n}名', fontproperties=font_title, pad=20, color=tchart['text_color'])
+
+    total = len(df)
+    for i, (bar, count) in enumerate(zip(bars, city_counts.values[::-1])):
+        percentage = (count / total) * 100 if total > 0 else 0
+        ax.text(
+            bar.get_width() + max(city_counts.values) * 0.01,
+            bar.get_y() + bar.get_height() / 2,
+            f'{count:,} ({percentage:.1f}%)',
+            va='center',
+            fontproperties=font_text,
+            color=tchart['text_color']
+        )
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.xaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
+def create_city_type_comparison_chart(df, province, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+
+    font_prop = FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(family='SimHei', size=14, weight='bold')
+    font_label = FontProperties(family='SimHei', size=11, weight='bold')
+    font_text = FontProperties(family='SimHei', size=9, weight='bold')
+
+    city_type_order = ['省会城市', '地级市', '县级市', '直辖市辖区']
+    available_types = [t for t in city_type_order if t in df['city_type'].unique()]
+
+    if not available_types:
+        available_types = list(df['city_type'].unique())
+
+    colors = tchart['palette_segment']
+    if len(colors) < len(available_types):
+        colors = sns.color_palette(tchart['palette_province'], len(available_types))
+
+    summary = df.groupby('city_type', observed=True).agg({
+        'user_id': 'count',
+        'total_spent': 'sum',
+        'behavior_score': 'mean',
+        'login_frequency': 'mean'
+    })
+
+    summary = summary.reindex(available_types).fillna(0)
+
+    metrics = [
+        ('user_id', '用户数量（人）', axes[0, 0]),
+        ('total_spent', '总消费金额（元）', axes[0, 1]),
+        ('behavior_score', '平均行为得分', axes[1, 0]),
+        ('login_frequency', '平均登录频率（次）', axes[1, 1])
+    ]
+
+    for col, title, ax in metrics:
+        ax.set_facecolor(tchart['axes_facecolor'])
+        values = summary[col].values
+        bars = ax.bar(
+            range(len(available_types)),
+            values,
+            color=colors[:len(available_types)],
+            edgecolor=tchart['axes_facecolor'],
+            linewidth=2,
+            width=0.6
+        )
+
+        ax.set_xticks(range(len(available_types)))
+        ax.set_xticklabels(available_types, fontproperties=font_prop)
+        ax.set_title(title, fontproperties=font_title, pad=10, color=tchart['text_color'])
+        ax.set_ylabel('数值', fontproperties=font_label, color=tchart['label_color'])
+
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
+            label.set_color(tchart['tick_color'])
+
+        for bar, val in zip(bars, values):
+            display_val = f'{val:,.0f}' if col in ['user_id', 'total_spent'] else f'{val:.1f}'
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + max(values) * 0.02 if max(values) > 0 else 0.1,
+                display_val,
+                ha='center',
+                fontproperties=font_text,
+                color=tchart['text_color']
+            )
+
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_color(tchart['grid_color'])
+        ax.spines['bottom'].set_color(tchart['grid_color'])
+        ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+        ax.set_axisbelow(True)
+
+    fig.suptitle(f'{province} 不同城市类型对比分析', fontproperties=font_title, fontsize=16, y=1.02, color=tchart['text_color'])
+    plt.tight_layout()
+    return fig
+
+
+def get_city_level_stats(df):
+    city_stats = df.groupby('city', observed=True).agg({
+        'user_id': 'count',
+        'total_spent': ['sum', 'mean'],
+        'behavior_score': 'mean',
+        'login_frequency': 'mean',
+        'online_hours': 'mean',
+        'purchase_count': 'mean'
+    }).round(2)
+
+    city_stats.columns = [
+        '用户数量', '总消费金额', '平均消费金额',
+        '平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数'
+    ]
+    city_stats = city_stats.reset_index()
+    city_stats = city_stats.rename(columns={'city': '城市'})
+
+    total_users = city_stats['用户数量'].sum()
+    city_stats['用户占比(%)'] = (city_stats['用户数量'] / total_users * 100).round(2)
+    city_stats = city_stats.sort_values('用户数量', ascending=False).reset_index(drop=True)
+    city_stats.insert(0, '排名', range(1, len(city_stats) + 1))
+
+    return city_stats
 
 
 def create_behavior_pie_chart(df, theme=None):
@@ -791,6 +960,12 @@ def main():
         index=0,
         help="选择要导出的数据格式"
     )
+    export_scope = st.sidebar.selectbox(
+        "导出范围",
+        options=["用户明细数据", "省份级别汇总", "城市级别汇总"],
+        index=0,
+        help="选择要导出的数据范围：用户明细、省份汇总或城市汇总"
+    )
     export_clicked = st.sidebar.button(
         "📤 导出数据",
         use_container_width=True,
@@ -826,22 +1001,71 @@ def main():
         else:
             try:
                 export_format_ext = 'csv' if export_format == 'CSV' else 'xlsx'
-                export_df = df_filtered.copy()
                 
-                display_cols = [
-                    'user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type',
-                    'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
-                    'total_spent', 'last_active_days', 'page_views', 'click_count',
-                    'login_score', 'online_score', 'purchase_score', 'spent_score',
-                    'activity_score', 'behavior_score',
-                    'top_interest', 'top_consumption', 'top_channel',
-                    'interest_concentration', 'consumption_concentration', 'channel_concentration'
-                ]
-                available_cols = [col for col in display_cols if col in export_df.columns]
-                export_df = export_df[available_cols]
+                if export_scope == "城市级别汇总":
+                    export_df = df_filtered.groupby(['province', 'city', 'city_type'], observed=True).agg({
+                        'user_id': 'count',
+                        'total_spent': ['sum', 'mean'],
+                        'behavior_score': 'mean',
+                        'login_frequency': 'mean',
+                        'online_hours': 'mean',
+                        'purchase_count': 'mean'
+                    }).round(2)
+                    export_df.columns = [
+                        '用户数量', '总消费金额', '平均消费金额',
+                        '平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数'
+                    ]
+                    export_df = export_df.reset_index()
+                    export_df = export_df.rename(columns={
+                        'province': '省份', 'city': '城市', 'city_type': '城市类型'
+                    })
+                    total_users_city = export_df['用户数量'].sum()
+                    export_df['用户占比(%)'] = (export_df['用户数量'] / total_users_city * 100).round(2)
+                    export_df = export_df.sort_values(['省份', '用户数量'], ascending=[True, False]).reset_index(drop=True)
+                    export_df.insert(0, '序号', range(1, len(export_df) + 1))
+                    export_prefix = "city_level_summary"
+                    
+                elif export_scope == "省份级别汇总":
+                    export_df = df_filtered.groupby(['province', 'region_type'], observed=True).agg({
+                        'user_id': 'count',
+                        'city': 'nunique',
+                        'total_spent': ['sum', 'mean'],
+                        'behavior_score': 'mean',
+                        'login_frequency': 'mean',
+                        'online_hours': 'mean',
+                        'purchase_count': 'mean'
+                    }).round(2)
+                    export_df.columns = [
+                        '用户数量', '覆盖城市数', '总消费金额', '平均消费金额',
+                        '平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数'
+                    ]
+                    export_df = export_df.reset_index()
+                    export_df = export_df.rename(columns={
+                        'province': '省份', 'region_type': '地域类型'
+                    })
+                    total_users_prov = export_df['用户数量'].sum()
+                    export_df['用户占比(%)'] = (export_df['用户数量'] / total_users_prov * 100).round(2)
+                    export_df = export_df.sort_values('用户数量', ascending=False).reset_index(drop=True)
+                    export_df.insert(0, '排名', range(1, len(export_df) + 1))
+                    export_prefix = "province_level_summary"
+                    
+                else:
+                    export_df = df_filtered.copy()
+                    display_cols = [
+                        'user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type', 'city_type',
+                        'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
+                        'total_spent', 'last_active_days', 'page_views', 'click_count',
+                        'login_score', 'online_score', 'purchase_score', 'spent_score',
+                        'activity_score', 'behavior_score',
+                        'top_interest', 'top_consumption', 'top_channel',
+                        'interest_concentration', 'consumption_concentration', 'channel_concentration'
+                    ]
+                    available_cols = [col for col in display_cols if col in export_df.columns]
+                    export_df = export_df[available_cols]
+                    export_prefix = "user_profile_data"
                 
-                exported_data = export_data(export_df, export_format_ext)
-                filename = generate_export_filename(export_format_ext)
+                exported_data = export_data(export_df, export_format_ext, export_scope)
+                filename = generate_export_filename(export_format_ext, prefix=export_prefix)
                 mime_type = get_export_mime_type(export_format_ext)
                 stats = get_data_statistics(export_df)
                 file_size_kb = round(len(exported_data) / 1024, 2)
@@ -852,7 +1076,8 @@ def main():
                     'selected_segment': selected_segment,
                     'min_login_freq': min_login_freq,
                     'min_purchase': min_purchase,
-                    'min_online_hours': min_online_hours
+                    'min_online_hours': min_online_hours,
+                    'export_scope': export_scope
                 }
 
                 st.session_state.export_result = {
@@ -862,6 +1087,7 @@ def main():
                     'stats': stats,
                     'file_size_kb': file_size_kb,
                     'export_format': export_format,
+                    'export_scope': export_scope,
                     'filter_summary': filter_summary,
                     'success': True
                 }
@@ -899,7 +1125,7 @@ def main():
                 
                 st.markdown("#### 🔍 导出时筛选条件")
                 fs = result['filter_summary']
-                filter_col1, filter_col2, filter_col3 = st.columns(3)
+                filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
                 with filter_col1:
                     st.markdown(f"- **样本数量**: {fs['n_samples']:,}")
                     st.markdown(f"- **选择省份**: {fs['selected_province']}")
@@ -910,6 +1136,8 @@ def main():
                 with filter_col3:
                     st.markdown(f"- **最低购买次数**: {fs['min_purchase']} 次")
                     st.markdown(f"- **最低在线时长**: {fs['min_online_hours']:.1f} 小时")
+                with filter_col4:
+                    st.markdown(f"- **导出范围**: {fs.get('export_scope', '用户明细数据')}")
                 
                 st.markdown("---")
                 st.markdown("#### 📊 导出数据统计")
@@ -1356,11 +1584,111 @@ def main():
     
     if selected_province != "全部":
         st.markdown("---")
-        st.subheader(f"🏙️ {selected_province} 城市分布前十")
-        city_summary = df_filtered['city'].value_counts().head(10).reset_index()
-        city_summary.columns = ['城市', '用户数']
-        city_summary['占比'] = (city_summary['用户数'] / len(df_filtered) * 100).round(2).astype(str) + '%'
-        st.dataframe(city_summary, use_container_width=True, hide_index=True)
+        st.subheader(f"🏙️ {selected_province} 城市级别分析")
+
+        city_stats = get_city_level_stats(df_filtered)
+        capital = get_province_capital(selected_province)
+
+        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+        with metric_col1:
+            st.metric("覆盖城市数", f"{city_stats['城市'].nunique()}")
+        with metric_col2:
+            total_city_revenue = city_stats['总消费金额'].sum()
+            st.metric("城市总消费", f"¥{total_city_revenue:,.0f}")
+        with metric_col3:
+            if capital and capital in city_stats['城市'].values:
+                capital_users = city_stats[city_stats['城市'] == capital]['用户数量'].values[0]
+                st.metric(f"省会({capital})用户", f"{capital_users:,}")
+            else:
+                st.metric("省会城市用户", "暂无数据")
+        with metric_col4:
+            avg_behavior = city_stats['平均行为得分'].mean()
+            st.metric("城市平均行为分", f"{avg_behavior:.1f}")
+
+        st.markdown("---")
+
+        city_col1, city_col2 = st.columns(2)
+
+        with city_col1:
+            st.markdown(f"### 📊 {selected_province} 城市用户分布")
+            city_top_n = st.slider(
+                "显示城市数量",
+                min_value=3,
+                max_value=min(20, len(city_stats)),
+                value=min(10, len(city_stats)),
+                key="city_top_n_slider"
+            )
+            city_dist_fig = create_city_distribution_chart(
+                df_filtered, selected_province, top_n=city_top_n
+            )
+            st.pyplot(city_dist_fig, use_container_width=True)
+
+        with city_col2:
+            st.markdown(f"### 📈 {selected_province} 城市类型对比分析")
+            if 'city_type' in df_filtered.columns and df_filtered['city_type'].nunique() > 0:
+                city_type_fig = create_city_type_comparison_chart(
+                    df_filtered, selected_province
+                )
+                st.pyplot(city_type_fig, use_container_width=True)
+            else:
+                st.info("暂无城市类型数据")
+
+        st.markdown("---")
+
+        st.markdown(f"### 📋 {selected_province} 城市详细统计")
+
+        display_city_stats = city_stats.copy()
+        for col in ['总消费金额', '平均消费金额']:
+            if col in display_city_stats.columns:
+                display_city_stats[col] = display_city_stats[col].apply(
+                    lambda x: f"¥{x:,.2f}"
+                )
+        for col in ['平均行为得分', '平均登录频率', '平均在线时长', '平均购买次数', '用户占比(%)']:
+            if col in display_city_stats.columns:
+                display_city_stats[col] = display_city_stats[col].round(2)
+
+        st.dataframe(display_city_stats, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        city_type_col1, city_type_col2 = st.columns(2)
+
+        with city_type_col1:
+            st.markdown("#### 🏷️ 城市类型分布")
+            if 'city_type' in df_filtered.columns:
+                city_type_summary = df_filtered.groupby('city_type', observed=True).agg({
+                    'user_id': 'count',
+                    'total_spent': 'sum',
+                    'behavior_score': 'mean'
+                }).round(2)
+                city_type_summary = city_type_summary.reset_index()
+                city_type_summary.columns = ['城市类型', '用户数量', '总消费金额', '平均行为得分']
+                total_type_users = city_type_summary['用户数量'].sum()
+                city_type_summary['用户占比(%)'] = (city_type_summary['用户数量'] / total_type_users * 100).round(2)
+                city_type_summary['总消费金额'] = city_type_summary['总消费金额'].apply(lambda x: f"¥{x:,.2f}")
+                city_type_summary['平均行为得分'] = city_type_summary['平均行为得分'].round(2)
+                st.dataframe(city_type_summary, use_container_width=True, hide_index=True)
+            else:
+                st.info("暂无城市类型数据")
+
+        with city_type_col2:
+            st.markdown("#### 🏆 各指标领先城市")
+            if len(city_stats) > 0:
+                top_users = city_stats.iloc[0]
+                top_revenue = city_stats.loc[city_stats['总消费金额'].idxmax()]
+                top_behavior = city_stats.loc[city_stats['平均行为得分'].idxmax()]
+                top_spending = city_stats.loc[city_stats['平均消费金额'].idxmax()]
+
+                st.markdown(f"- **用户最多**: {top_users['城市']} ({top_users['用户数量']:,} 人)")
+                st.markdown(f"- **总消费最高**: {top_revenue['城市']} (¥{top_revenue['总消费金额']:,.2f})")
+                st.markdown(f"- **最活跃**: {top_behavior['城市']} (行为分 {top_behavior['平均行为得分']:.1f})")
+                st.markdown(f"- **人均消费最高**: {top_spending['城市']} (¥{top_spending['平均消费金额']:,.2f})")
+            else:
+                st.info("暂无数据")
+
+        if export_format == "Excel":
+            st.markdown("---")
+            st.info(f"💡 提示：选择侧边栏 **导出范围** 为 **城市级别汇总**，可将 {selected_province} 的城市数据导出到 Excel 中")
     
     if show_data:
         st.markdown("---")
