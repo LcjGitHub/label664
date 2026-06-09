@@ -123,7 +123,26 @@ def generate_mock_data(n_samples=3000):
         else:
             return '55+'
     
+    def get_generation(age):
+        current_year = 2026
+        birth_year = current_year - age
+        if 2000 <= birth_year <= 2009:
+            return '00后'
+        elif 1990 <= birth_year <= 1999:
+            return '90后'
+        elif 1980 <= birth_year <= 1989:
+            return '80后'
+        elif 1970 <= birth_year <= 1979:
+            return '70后'
+        elif 1960 <= birth_year <= 1969:
+            return '60后'
+        else:
+            return '其他'
+    
+    GENERATION_ORDER = ['00后', '90后', '80后', '70后', '60后', '其他']
+    
     age_groups = [get_age_group(age) for age in ages]
+    generations = [get_generation(age) for age in ages]
     
     provinces_list = list(PROVINCE_WEIGHTS.keys())
     weights_list = list(PROVINCE_WEIGHTS.values())
@@ -149,6 +168,7 @@ def generate_mock_data(n_samples=3000):
         'gender': genders,
         'age': ages,
         'age_group': age_groups,
+        'generation': generations,
         'province': provinces,
         'city': cities,
         'region_type': region_types,
@@ -752,6 +772,258 @@ def create_segment_comparison_chart(df, theme=None):
     return fig
 
 
+GENERATION_ORDER = ['00后', '90后', '80后', '70后', '60后', '其他']
+
+
+def create_generation_pie_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    font_prop = FontProperties(family='SimHei', size=12)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_text = FontProperties(family='SimHei', size=13, weight='bold')
+
+    generation_counts = df['generation'].value_counts()
+    generation_counts = generation_counts.reindex(GENERATION_ORDER)
+    generation_counts = generation_counts.fillna(0)
+    generation_counts = generation_counts[generation_counts > 0]
+
+    colors = sns.color_palette(tchart['palette_segment'], len(generation_counts))
+    if len(colors) < len(generation_counts):
+        colors = sns.color_palette(tchart['palette_province'], len(generation_counts))
+
+    explode = tuple([0.05] * len(generation_counts))
+
+    wedges, texts, autotexts = ax.pie(
+        generation_counts.values,
+        labels=generation_counts.index,
+        colors=colors,
+        autopct='%1.1f%%',
+        startangle=90,
+        explode=explode,
+        pctdistance=0.75,
+        wedgeprops=dict(edgecolor=tchart['figure_facecolor'], linewidth=3)
+    )
+
+    for text in texts:
+        text.set_fontproperties(font_text)
+        text.set_color(tchart['text_color'])
+    for autotext in autotexts:
+        autotext.set_fontproperties(font_text)
+        autotext.set_color(tchart['pie_text_color'])
+
+    total = generation_counts.sum()
+    legend_labels = [
+        f'{gen}: {int(cnt)}人 ({cnt/total*100:.1f}%)'
+        for gen, cnt in zip(generation_counts.index, generation_counts.values)
+    ]
+    legend = ax.legend(
+        wedges, legend_labels,
+        loc='center left',
+        bbox_to_anchor=(1, 0.5),
+        prop=font_prop,
+        frameon=True,
+        shadow=True
+    )
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
+    ax.set_title('各代际用户数量占比', fontproperties=font_title, pad=20, color=tchart['text_color'])
+
+    plt.tight_layout()
+    return fig
+
+
+def create_generation_consumption_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    from user_preferences import aggregate_preferences, TAG_CATEGORIES
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    font_prop = FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_text = FontProperties(family='SimHei', size=9, weight='bold')
+    font_legend = FontProperties(family='SimHei', size=11)
+
+    available_generations = [g for g in GENERATION_ORDER if g in df['generation'].unique()]
+    consumption_tags = TAG_CATEGORIES['consumption'][:8]
+
+    generation_prefs = aggregate_preferences(df, 'consumption', group_col='generation')
+
+    data = {}
+    for gen in available_generations:
+        gen_prefs = generation_prefs.get(gen, {})
+        gen_total = sum(gen_prefs.values()) or 1
+        data[gen] = {tag: gen_prefs.get(tag, 0) / gen_total * 100 for tag in consumption_tags}
+
+    result_df = pd.DataFrame(data)
+    result_df = result_df.fillna(0)
+
+    x = np.arange(len(consumption_tags))
+    width = 0.12
+    n_gens = len(available_generations)
+    total_width = width * n_gens
+    start_x = x - (total_width - width) / 2
+
+    colors = sns.color_palette(tchart['palette_segment'], n_gens)
+    if len(colors) < n_gens:
+        colors = sns.color_palette(tchart['palette_province'], n_gens)
+
+    bars_list = []
+    for i, gen in enumerate(available_generations):
+        bars = ax.bar(
+            start_x + i * width,
+            result_df[gen].values,
+            width,
+            label=gen,
+            color=colors[i],
+            edgecolor=tchart['axes_facecolor'],
+            linewidth=1
+        )
+        bars_list.append(bars)
+
+    ax.set_xlabel('消费偏好标签', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('偏好占比 (%)', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title('不同代际消费偏好对比', fontproperties=font_title, pad=20, color=tchart['text_color'])
+    ax.set_xticks(x)
+    ax.set_xticklabels(consumption_tags, fontproperties=font_prop, rotation=20, ha='right')
+
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True)
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
+def create_generation_interest_area_chart(df, theme=None):
+    if theme is None:
+        theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
+    tchart = theme['chart']
+
+    from user_preferences import aggregate_preferences, TAG_CATEGORIES
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    fig.patch.set_facecolor(tchart['figure_facecolor'])
+    ax.set_facecolor(tchart['axes_facecolor'])
+
+    font_prop = FontProperties(family='SimHei', size=10)
+    font_title = FontProperties(family='SimHei', size=16, weight='bold')
+    font_label = FontProperties(family='SimHei', size=12, weight='bold')
+    font_legend = FontProperties(family='SimHei', size=11)
+
+    available_generations = [g for g in GENERATION_ORDER if g in df['generation'].unique()]
+    interest_tags = TAG_CATEGORIES['interest'][:10]
+
+    generation_prefs = aggregate_preferences(df, 'interest', group_col='generation')
+
+    data = {}
+    for gen in available_generations:
+        gen_prefs = generation_prefs.get(gen, {})
+        gen_total = sum(gen_prefs.values()) or 1
+        data[gen] = {tag: gen_prefs.get(tag, 0) / gen_total * 100 for tag in interest_tags}
+
+    result_df = pd.DataFrame(data)
+    result_df = result_df.fillna(0)
+
+    colors = sns.color_palette(tchart['palette_segment'], len(available_generations))
+    if len(colors) < len(available_generations):
+        colors = sns.color_palette(tchart['palette_province'], len(available_generations))
+
+    ax.stackplot(
+        range(len(interest_tags)),
+        [result_df[gen].values for gen in available_generations],
+        labels=available_generations,
+        colors=colors,
+        alpha=0.85,
+        edgecolor=tchart['axes_facecolor'],
+        linewidth=0.5
+    )
+
+    ax.set_xlabel('兴趣标签', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_ylabel('偏好占比 (%)', fontproperties=font_label, color=tchart['label_color'])
+    ax.set_title('代际与兴趣标签关系', fontproperties=font_title, pad=20, color=tchart['text_color'])
+    ax.set_xticks(range(len(interest_tags)))
+    ax.set_xticklabels(interest_tags, fontproperties=font_prop, rotation=30, ha='right')
+
+    legend = ax.legend(prop=font_legend, frameon=True, shadow=True, loc='upper right')
+    legend.get_frame().set_facecolor(tchart['axes_facecolor'])
+    for text in legend.get_texts():
+        text.set_color(tchart['text_color'])
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(font_prop)
+        label.set_color(tchart['tick_color'])
+
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color(tchart['grid_color'])
+    ax.spines['bottom'].set_color(tchart['grid_color'])
+    ax.yaxis.grid(True, alpha=0.3, linestyle='--', color=tchart['grid_color'])
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    return fig
+
+
+def get_generation_summary(df):
+    summary = df.groupby('generation', observed=True).agg({
+        'user_id': 'count',
+        'age': ['mean', 'min', 'max'],
+        'login_frequency': 'mean',
+        'online_hours': 'mean',
+        'purchase_count': 'mean',
+        'total_spent': 'mean',
+        'behavior_score': 'mean'
+    }).round(2)
+
+    summary.columns = [
+        '用户数量', '平均年龄', '最小年龄', '最大年龄',
+        '平均登录频率', '平均在线时长', '平均购买次数',
+        '平均消费金额', '平均行为得分'
+    ]
+    summary = summary.reset_index()
+    summary = summary.rename(columns={'generation': '代际'})
+
+    total_users = summary['用户数量'].sum()
+    summary['用户占比(%)'] = (summary['用户数量'] / total_users * 100).round(2)
+    summary['平均消费金额'] = summary['平均消费金额'].apply(lambda x: f"¥{x:,.2f}")
+
+    ordered = []
+    for gen in GENERATION_ORDER:
+        gen_row = summary[summary['代际'] == gen]
+        if len(gen_row) > 0:
+            ordered.append(gen_row)
+    if ordered:
+        summary = pd.concat(ordered).reset_index(drop=True)
+
+    return summary
+
+
 def create_preference_wordcloud(df, pref_type, _version=3, theme=None):
     if theme is None:
         theme = get_theme(st.session_state.get('theme', DEFAULT_THEME))
@@ -935,6 +1207,15 @@ def main():
         help="选择一个或多个行为群体查看详细数据"
     )
 
+    st.sidebar.subheader("👶 代际筛选")
+    generation_options = GENERATION_ORDER
+    selected_generation = st.sidebar.multiselect(
+        "选择代际",
+        options=generation_options,
+        default=[],
+        help="选择一个或多个代际查看该代际的详细画像数据"
+    )
+
     st.sidebar.subheader("🎨 偏好分析")
     pref_type_options = list(PREFERENCE_TYPES.keys())
     pref_type_labels = list(PREFERENCE_TYPES.values())
@@ -1023,6 +1304,9 @@ def main():
     if selected_segment:
         df_filtered = df_filtered[df_filtered['user_segment'].isin(selected_segment)]
 
+    if selected_generation:
+        df_filtered = df_filtered[df_filtered['generation'].isin(selected_generation)]
+
     df_filtered = df_filtered[df_filtered['login_frequency'] >= min_login_freq]
     df_filtered = df_filtered[df_filtered['purchase_count'] >= min_purchase]
     df_filtered = df_filtered[df_filtered['online_hours'] >= min_online_hours]
@@ -1086,7 +1370,7 @@ def main():
                 else:
                     export_df = df_filtered.copy()
                     display_cols = [
-                        'user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type', 'city_type',
+                        'user_id', 'gender', 'age', 'age_group', 'generation', 'province', 'city', 'region_type', 'city_type',
                         'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
                         'total_spent', 'last_active_days', 'page_views', 'click_count',
                         'login_score', 'online_score', 'purchase_score', 'spent_score',
@@ -1108,6 +1392,7 @@ def main():
                     'n_samples': n_samples,
                     'selected_province': selected_province,
                     'selected_segment': selected_segment,
+                    'selected_generation': selected_generation,
                     'min_login_freq': min_login_freq,
                     'min_purchase': min_purchase,
                     'min_online_hours': min_online_hours,
@@ -1165,7 +1450,9 @@ def main():
                     st.markdown(f"- **选择省份**: {fs['selected_province']}")
                 with filter_col2:
                     segment_text = '、'.join(fs['selected_segment']) if fs['selected_segment'] else '全部'
+                    gen_text = '、'.join(fs.get('selected_generation', [])) if fs.get('selected_generation') else '全部'
                     st.markdown(f"- **行为群体**: {segment_text}")
+                    st.markdown(f"- **代际**: {gen_text}")
                     st.markdown(f"- **最低登录频率**: {fs['min_login_freq']} 次")
                 with filter_col3:
                     st.markdown(f"- **最低购买次数**: {fs['min_purchase']} 次")
@@ -1413,6 +1700,159 @@ def main():
         age_gender_fig = create_age_gender_chart(df_filtered)
         st.pyplot(age_gender_fig, use_container_width=True)
     
+    st.markdown("---")
+
+    st.subheader("👶 代际分析")
+    st.markdown("#### 代际分组说明：00后(17-26岁)、90后(27-36岁)、80后(37-46岁)、70后(47-56岁)、60后(57-66岁)")
+    
+    df_gen_view = df_filtered if len(df_filtered) > 0 else df_full
+
+    gen_col1, gen_col2, gen_col3, gen_col4, gen_col5, gen_col6 = st.columns(6)
+    gen_display = GENERATION_ORDER
+    gen_colors = [tc['accent_blue'], tc['accent_green'], tc['accent_orange'], tc['accent_red'], tc['accent_green'], tc['accent_gray']]
+    gen_icons = ['🆕', '🎯', '💼', '🏆', '🌟', '👴']
+
+    for i, (gen, color, icon) in enumerate(zip(gen_display, gen_colors, gen_icons)):
+        gen_data = df_gen_view[df_gen_view['generation'] == gen]
+        if len(gen_data) > 0:
+            with [gen_col1, gen_col2, gen_col3, gen_col4, gen_col5, gen_col6][i]:
+                st.markdown(
+                    f"""
+                    <div class="metric-card" style="border-top: 4px solid {color};">
+                        <h3 style="color: {color}; margin: 0 0 10px 0;">{icon} {gen}</h3>
+                        <p style="font-size: 24px; font-weight: bold; color: {tc['primary_text']}; margin: 10px 0;">{len(gen_data):,} 人</p>
+                        <p style="color: {tc['secondary_text']}; margin: 5px 0;">占比: {len(gen_data)/len(df_gen_view)*100:.1f}%</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+    st.markdown("---")
+
+    gen_pcol1, gen_pcol2 = st.columns([1, 1.5])
+
+    with gen_pcol1:
+        st.subheader("🥧 各代际用户数量占比")
+        generation_pie_fig = create_generation_pie_chart(df_gen_view)
+        st.pyplot(generation_pie_fig, use_container_width=True)
+
+    with gen_pcol2:
+        st.subheader("📊 不同代际消费偏好对比")
+        generation_consumption_fig = create_generation_consumption_chart(df_gen_view)
+        st.pyplot(generation_consumption_fig, use_container_width=True)
+
+    st.markdown("---")
+
+    st.subheader("📈 代际与兴趣标签关系")
+    generation_area_fig = create_generation_interest_area_chart(df_gen_view)
+    st.pyplot(generation_area_fig, use_container_width=True)
+
+    st.markdown("---")
+
+    st.subheader("📋 代际统计摘要")
+    generation_summary = get_generation_summary(df_gen_view)
+    st.dataframe(generation_summary, use_container_width=True, hide_index=True)
+
+    if selected_generation:
+        st.markdown("---")
+        st.subheader(f"🔍 代际详细画像")
+        st.info(f"💡 当前已筛选代际: {'、'.join(selected_generation)}，以下为所选代际的详细画像数据")
+        
+        gen_detail_col1, gen_detail_col2, gen_detail_col3 = st.columns(3)
+        
+        for i, sel_gen in enumerate(selected_generation):
+            gen_detail_data = df_filtered[df_filtered['generation'] == sel_gen]
+            if len(gen_detail_data) > 0:
+                col_idx = i % 3
+                color_blue = tc['accent_blue']
+                color_green = tc['accent_green']
+                color_orange = tc['accent_orange']
+                color_primary = tc['primary_text']
+                color_secondary = tc['secondary_text']
+                
+                gen_user_count = f"{len(gen_detail_data):,}"
+                gen_avg_age = f"{gen_detail_data['age'].mean():.1f}"
+                gen_age_min = gen_detail_data['age'].min()
+                gen_age_max = gen_detail_data['age'].max()
+                male_count = len(gen_detail_data[gen_detail_data['gender'] == '男'])
+                female_count = len(gen_detail_data[gen_detail_data['gender'] == '女'])
+                gen_male_pct = f"{male_count / len(gen_detail_data) * 100:.1f}"
+                gen_female_pct = f"{female_count / len(gen_detail_data) * 100:.1f}"
+                
+                gen_avg_login = f"{gen_detail_data['login_frequency'].mean():.1f}"
+                gen_avg_online = f"{gen_detail_data['online_hours'].mean():.1f}"
+                gen_avg_purchase = f"{gen_detail_data['purchase_count'].mean():.1f}"
+                gen_avg_spent = f"¥{gen_detail_data['total_spent'].mean():,.0f}"
+                gen_avg_behavior = f"{gen_detail_data['behavior_score'].mean():.1f}"
+                
+                top_interest = gen_detail_data['top_interest'].value_counts().head(3)
+                top_consumption = gen_detail_data['top_consumption'].value_counts().head(3)
+                top_channel = gen_detail_data['top_channel'].value_counts().head(3)
+                
+                interest_items = ""
+                if len(top_interest) > 0:
+                    for idx, (tag, cnt) in enumerate(top_interest.items()):
+                        interest_items += f'<p style="color: {color_secondary};">&nbsp;&nbsp;{idx+1}. {tag} ({cnt}人)</p>'
+                else:
+                    interest_items = f'<p style="color: {color_secondary};">&nbsp;&nbsp;暂无数据</p>'
+                
+                consumption_items = ""
+                if len(top_consumption) > 0:
+                    for idx, (tag, cnt) in enumerate(top_consumption.items()):
+                        consumption_items += f'<p style="color: {color_secondary};">&nbsp;&nbsp;{idx+1}. {tag} ({cnt}人)</p>'
+                else:
+                    consumption_items = f'<p style="color: {color_secondary};">&nbsp;&nbsp;暂无数据</p>'
+                
+                channel_items = ""
+                if len(top_channel) > 0:
+                    for idx, (tag, cnt) in enumerate(top_channel.items()):
+                        channel_items += f'<p style="color: {color_secondary};">&nbsp;&nbsp;{idx+1}. {tag} ({cnt}人)</p>'
+                else:
+                    channel_items = f'<p style="color: {color_secondary};">&nbsp;&nbsp;暂无数据</p>'
+                
+                with [gen_detail_col1, gen_detail_col2, gen_detail_col3][col_idx]:
+                    st.markdown(f"### {sel_gen} 详细画像")
+                    st.markdown(
+                        f"""
+                        <div class="metric-card" style="border-top: 4px solid {color_blue};">
+                            <p style="font-size: 20px; font-weight: bold; color: {color_primary};">基础信息</p>
+                            <p style="color: {color_primary};"><strong>用户数量:</strong> {gen_user_count} 人</p>
+                            <p style="color: {color_primary};"><strong>平均年龄:</strong> {gen_avg_age}岁</p>
+                            <p style="color: {color_primary};"><strong>年龄范围:</strong> {gen_age_min} - {gen_age_max}岁</p>
+                            <p style="color: {color_primary};"><strong>男性占比:</strong> {gen_male_pct}%</p>
+                            <p style="color: {color_primary};"><strong>女性占比:</strong> {gen_female_pct}%</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f"""
+                        <div class="metric-card" style="border-top: 4px solid {color_green};">
+                            <p style="font-size: 20px; font-weight: bold; color: {color_primary};">行为数据</p>
+                            <p style="color: {color_primary};"><strong>平均登录频率:</strong> {gen_avg_login}次</p>
+                            <p style="color: {color_primary};"><strong>平均在线时长:</strong> {gen_avg_online}小时</p>
+                            <p style="color: {color_primary};"><strong>平均购买次数:</strong> {gen_avg_purchase}次</p>
+                            <p style="color: {color_primary};"><strong>平均消费金额:</strong> {gen_avg_spent}</p>
+                            <p style="color: {color_primary};"><strong>平均行为得分:</strong> {gen_avg_behavior}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f"""
+                        <div class="metric-card" style="border-top: 4px solid {color_orange};">
+                            <p style="font-size: 20px; font-weight: bold; color: {color_primary};">偏好TOP3</p>
+                            <p style="color: {color_primary};"><strong>兴趣偏好:</strong></p>
+                            {interest_items}
+                            <p style="color: {color_primary};"><strong>消费偏好:</strong></p>
+                            {consumption_items}
+                            <p style="color: {color_primary};"><strong>渠道偏好:</strong></p>
+                            {channel_items}
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
     st.markdown("---")
     
     col1, col2 = st.columns(2)
@@ -1751,7 +2191,7 @@ def main():
 
     st.subheader("📋 数据摘要")
     
-    summary_col1, summary_col2, summary_col3 = st.columns(3)
+    summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
     
     with summary_col1:
         st.markdown("### 性别统计")
@@ -1768,6 +2208,14 @@ def main():
         st.dataframe(age_summary, use_container_width=True, hide_index=True)
     
     with summary_col3:
+        st.markdown("### 代际统计")
+        gen_summary = df_filtered['generation'].value_counts().reindex(GENERATION_ORDER).reset_index()
+        gen_summary.columns = ['代际', '用户数']
+        gen_summary['占比'] = (gen_summary['用户数'] / len(df_filtered) * 100).round(2).astype(str) + '%'
+        gen_summary = gen_summary.dropna(subset=['用户数'])
+        st.dataframe(gen_summary, use_container_width=True, hide_index=True)
+    
+    with summary_col4:
         st.markdown("### 省份统计前十")
         province_summary = df_filtered['province'].value_counts().head(10).reset_index()
         province_summary.columns = ['省份', '用户数']
@@ -1778,7 +2226,7 @@ def main():
         st.markdown("---")
         st.subheader("📄 原始数据预览")
         display_cols = [
-            'user_id', 'gender', 'age', 'age_group', 'province', 'city', 'region_type',
+            'user_id', 'gender', 'age', 'age_group', 'generation', 'province', 'city', 'region_type',
             'user_segment', 'login_frequency', 'online_hours', 'purchase_count',
             'total_spent', 'last_active_days', 'page_views', 'click_count', 'behavior_score',
             'top_interest', 'top_consumption', 'top_channel',
